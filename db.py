@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS reminders (
 CREATE TABLE IF NOT EXISTS user_tables (
     name TEXT PRIMARY KEY, description TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- журнал для админки: вызовы инструментов, запросы к модели, ошибки
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY, kind TEXT, name TEXT, data TEXT, ms INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS events_created ON events(created_at);
 """
 
 _lock = threading.Lock()
@@ -74,6 +81,26 @@ def kv_get(key):
 
 def kv_set(key, value):
     ex("INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
+
+
+# ---------- настройки (меняются из админки без редеплоя) ----------
+def setting(key, default=None, cast=str):
+    v = kv_get(f"set_{key}")
+    if v in (None, ""):
+        return default
+    try:
+        return cast(v)
+    except ValueError:
+        return default
+
+
+def owner_chat():
+    return config.OWNER_ID or int(kv_get("owner_id") or 0)
+
+
+# ---------- журнал событий ----------
+def log_event(kind, name, data="", ms=None):
+    ex("INSERT INTO events(kind,name,data,ms) VALUES(?,?,?,?)", (kind, name, str(data)[:4000], ms))
 
 
 # ---------- история ----------

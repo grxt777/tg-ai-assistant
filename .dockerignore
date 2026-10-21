@@ -5,3 +5,5 @@ venv/
 .venv/
 __pycache__/
 .git/
+admin/node_modules
+admin/

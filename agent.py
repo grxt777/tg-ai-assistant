@@ -1,6 +1,7 @@
 """Цикл агента: контекст (профиль + RAG + история) → Gemini → инструменты → ответ."""
 import io
 import logging
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -40,7 +41,7 @@ SYSTEM = """Ты — личный ИИ-ассистент одного чело�
 {docs}
 
 Твои таблицы: {tables}
-"""
+{instructions}"""
 
 
 async def _system_prompt(query_text):
@@ -62,6 +63,8 @@ async def _system_prompt(query_text):
         relevant=fmt(relevant),
         docs="\n\n".join(f"«{r['title']}»: {r['content']}" for r, _ in docs) or "—",
         tables=", ".join(t["name"] for t in db.user_tables()) or "пока нет",
+        instructions=(f"\nДополнительные указания владельца:\n{extra}\n"
+                      if (extra := db.setting("instructions", "")) else ""),
     )
 
 
@@ -70,7 +73,7 @@ async def run(chat_id, user_parts, history_text, query_text=None, save_history=T
     system = await _system_prompt(query_text if query_text is not None else history_text)
     contents = [types.Content(role="user" if m["role"] == "user" else "model",
                               parts=[types.Part.from_text(text=m["content"])])
-                for m in db.get_history(chat_id, config.HISTORY_LIMIT)]
+                for m in db.get_history(chat_id, db.setting("history_limit", config.HISTORY_LIMIT, int))]
     contents.append(types.Content(role="user", parts=user_parts))
 
     text, used = None, []
@@ -86,9 +89,13 @@ async def run(chat_id, user_parts, history_text, query_text=None, save_history=T
         contents.append(resp.candidates[0].content)
         parts = []
         for c in calls:
+            t0 = time.monotonic()
             result = await tools.call(c.name, dict(c.args or {}), chat_id)
             used.append(c.name)
             log.info("tool %s(%s) -> %s", c.name, dict(c.args or {}), tools.short(result))
+            db.log_event("error" if isinstance(result, dict) and "error" in result else "tool", c.name,
+                         tools.short({"args": dict(c.args or {}), "result": result}),
+                         int((time.monotonic() - t0) * 1000))
             parts.append(types.Part.from_function_response(name=c.name, response={"result": result}))
         contents.append(types.Content(role="user", parts=parts))
 

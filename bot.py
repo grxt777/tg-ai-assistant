@@ -8,8 +8,10 @@ from aiogram.types import Message
 from google.genai import types
 
 import agent
+import api
 import config
 import db
+import llm
 from tools import _to_local
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -58,6 +60,7 @@ async def answer(m: Message, parts, history_text, query_text=None):
         reply = await typing_while(m.chat.id, agent.run(m.chat.id, parts, history_text, query_text))
     except Exception as e:
         log.exception("agent error")
+        db.log_event("error", "agent", f"{type(e).__name__}: {e}")
         reply = f"⚠️ Ошибка: {type(e).__name__}: {e}"
     await send_long(m.chat.id, reply)
 
@@ -189,6 +192,7 @@ async def reminder_loop():
                     try:
                         text = await agent.run(r["chat_id"], [types.Part.from_text(text=prompt)], prompt)
                     except Exception as e:
+                        db.log_event("error", "reminder_task", f"{type(e).__name__}: {e}")
                         text = f"⚠️ Не смог выполнить задачу «{r['text']}»: {e}"
                     await send_long(r["chat_id"], text)
                 else:
@@ -200,7 +204,8 @@ async def reminder_loop():
 
 async def main():
     asyncio.create_task(reminder_loop())
-    log.info("Бот запущен, модель: %s", config.MODEL)
+    await api.start(bot)
+    log.info("Бот запущен, модель: %s", llm.current_model())
     await dp.start_polling(bot)
 
 

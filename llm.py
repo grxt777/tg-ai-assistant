@@ -1,12 +1,14 @@
 """Обёртка над Gemini API: генерация с инструментами и эмбеддинги."""
 import asyncio
 import logging
+import time
 
 import numpy as np
 from google import genai
 from google.genai import errors, types
 
 import config
+import db
 
 log = logging.getLogger(__name__)
 client = genai.Client(api_key=config.GEMINI_API_KEY)
@@ -43,15 +45,27 @@ async def embed(texts, task="RETRIEVAL_DOCUMENT"):
     return out
 
 
+def current_model():
+    return db.setting("model", config.MODEL)
+
+
 async def generate(contents, system, tools):
-    return await _retry(
+    model = current_model()
+    t0 = time.monotonic()
+    resp = await _retry(
         client.aio.models.generate_content,
-        model=config.MODEL,
+        model=model,
         contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=system,
             tools=tools,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            temperature=0.7,
+            temperature=db.setting("temperature", 0.7, float),
         ),
     )
+    u = resp.usage_metadata
+    db.log_event("llm", model, f"in={getattr(u, 'prompt_token_count', 0) or 0} "
+                               f"out={getattr(u, 'candidates_token_count', 0) or 0} "
+                               f"total={getattr(u, 'total_token_count', 0) or 0}",
+                 int((time.monotonic() - t0) * 1000))
+    return resp
