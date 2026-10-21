@@ -1,0 +1,6 @@
+aiogram>=3.13
+google-genai>=1.30
+python-dotenv>=1.0
+numpy>=1.26
+pypdf>=4.0
+tzdata
