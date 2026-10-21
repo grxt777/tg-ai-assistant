@@ -184,8 +184,8 @@ function MoreSheet({ open, onClose, path }: { open: boolean; onClose: () => void
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-30 md:hidden" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" />
-      <div className="sheet-in glass-strong absolute inset-x-4 mx-auto max-w-md rounded-[28px] p-3"
+      <div className="absolute inset-0 bg-black/20" />
+      <div className="sheet-in glass-strong absolute inset-x-4 z-10 mx-auto max-w-md rounded-[28px] p-3"
         style={{ bottom: "calc(var(--safe-bottom) + 88px)" }} onClick={(e) => e.stopPropagation()}>
         <div className="grid grid-cols-2 gap-2">
           {MORE.map((m) => (
@@ -291,6 +291,8 @@ export function Shell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <div className="edge-top" aria-hidden />
+      <div className="edge-bottom" aria-hidden />
       <MoreSheet open={sheet} onClose={() => setSheet(false)} path={path} />
       <TabBar active={active} onSelect={select} hidden={typing} />
     </div>

@@ -1,10 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
 import { act, api, fmtDate } from "@/lib/api";
-import { Button, ConfirmButton, Empty, ErrorNote, Input, PageHeader, Tabs, cx } from "@/components/ui";
+import { Button, ConfirmButton, Empty, ErrorNote, Input, PageHeader, cx } from "@/components/ui";
 import { haptic } from "@/lib/tg";
 
 type Msg = { id: number; role: "user" | "model"; content: string; created_at: string; pending?: boolean };
+
+/** **жирный** из ответов модели — без полноценного Markdown */
+function rich(text: string) {
+  return text.split(/(\*\*[^*\n]+\*\*)/g).map((p, i) =>
+    p.startsWith("**") && p.endsWith("**") && p.length > 4 ? <b key={i}>{p.slice(2, -2)}</b> : p);
+}
 
 const toBottom = (smooth = false) =>
   setTimeout(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? "smooth" : "auto" }), 60);
@@ -82,7 +88,7 @@ export default function ChatPage() {
               <div className={cx("max-w-[85%] rounded-[22px] px-4 py-2.5 text-[15px] leading-snug md:max-w-[70%]",
                 user ? "rounded-br-md bg-accent text-white shadow-lg shadow-accent/25" : "glass rounded-bl-md",
                 m.pending && "animate-pulse text-muted")}>
-                <div className="relative whitespace-pre-wrap break-words">{m.content}</div>
+                <div className="relative whitespace-pre-wrap break-words">{rich(m.content)}</div>
                 <div className={cx("relative mt-1 text-right text-[10px]", user ? "text-white/70" : "text-muted")}>{fmtDate(m.created_at)}</div>
               </div>
             </div>
@@ -91,15 +97,18 @@ export default function ChatPage() {
       </div>
 
       {/* поле ввода прилипает к низу; на мобилке — над нижней панелью */}
-      <div className="composer sticky z-20 -mx-1 pb-1">
+      <div className="composer sticky z-[26] -mx-1 pb-1">
         <div className="glass-strong rounded-[26px] p-2">
-          <div className="relative mb-2 flex flex-wrap items-center gap-2 px-1">
-            <Tabs value={mode} onChange={setMode} items={[["agent", "Ассистенту"], ["send", "От имени бота"]]} />
+          <div className="relative mb-1.5 flex items-center gap-1 px-1 text-xs">
+            {([["agent", "Ассистенту"], ["send", "От имени бота"]] as const).map(([v, l]) => (
+              <button key={v} onClick={() => { haptic.select(); setMode(v); }}
+                className={cx("rounded-full px-2.5 py-1 font-medium transition", mode === v ? "bg-accent text-white" : "text-muted")}>{l}</button>
+            ))}
             {mode === "agent" && (
-              <label className="flex items-center gap-1.5 text-xs text-muted">
-                <input type="checkbox" checked={mirror} onChange={(e) => setMirror(e.target.checked)} className="accent-[var(--accent)]" />
-                копия в Telegram
-              </label>
+              <button onClick={() => { haptic.select(); setMirror(!mirror); }}
+                className={cx("ml-auto rounded-full px-2.5 py-1 transition", mirror ? "bg-accent/15 text-accent" : "text-muted")}>
+                {mirror ? "✓ " : ""}копия в Telegram
+              </button>
             )}
           </div>
           <div className="relative flex items-end gap-2">

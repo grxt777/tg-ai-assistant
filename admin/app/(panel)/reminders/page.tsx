@@ -1,9 +1,11 @@
 "use client";
 import { useState } from "react";
 import { act, api, useApi } from "@/lib/api";
-import { Badge, Button, Card, ConfirmButton, Empty, ErrorNote, Input, PageHeader, Select, Tabs } from "@/components/ui";
+import { Badge, Button, Card, ConfirmButton, Empty, ErrorNote, Input, PageHeader, Select, Tabs, cx } from "@/components/ui";
 
 type Rem = { id: number; due_local: string; text: string; repeat: string; kind: string; done: number };
+const fmtDue = (local: string) =>
+  new Date(local.replace(" ", "T")).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const REPEAT: Record<string, string> = { none: "один раз", daily: "каждый день", weekly: "каждую неделю" };
 
 export default function RemindersPage() {
@@ -26,7 +28,10 @@ export default function RemindersPage() {
       <Card title="Новое напоминание" className="mb-4">
         <div className="grid gap-2 md:grid-cols-[1fr_200px_160px_150px_auto]">
           <Input placeholder={kind === "task" ? "Что сделать: «составь план на день»" : "Текст напоминания"} value={text} onChange={(e) => setText(e.target.value)} />
-          <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+          <label className="relative block">
+            {!when && <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base text-muted md:text-sm">Дата и время</span>}
+            <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={cx(!when && "text-transparent")} />
+          </label>
           <Select value={repeat} onChange={(e) => setRepeat(e.target.value)}>
             {Object.entries(REPEAT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </Select>
@@ -44,10 +49,10 @@ export default function RemindersPage() {
           <ul>
             {data.reminders.map((r) => (
               <li key={r.id} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
-                <div className="w-36 shrink-0 font-mono text-xs tabular-nums">{r.due_local}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm">{r.text}</div>
-                  <div className="mt-1 flex gap-1.5">
+                  <div className="text-xs font-medium tabular-nums text-accent">{fmtDue(r.due_local)}</div>
+                  <div className="mt-0.5 text-sm">{r.text}</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
                     <Badge tone={r.kind === "task" ? "accent" : "neutral"}>{r.kind === "task" ? "задача для ИИ" : "напоминание"}</Badge>
                     <Badge>{REPEAT[r.repeat] || r.repeat}</Badge>
                   </div>

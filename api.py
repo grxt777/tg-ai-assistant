@@ -20,7 +20,7 @@ import tools
 
 log = logging.getLogger(__name__)
 STARTED = time.time()
-SETTINGS = ("model", "temperature", "history_limit", "instructions")
+SETTINGS = ("model", "temperature", "history_limit", "instructions", "fallback")
 _bot = None
 
 
@@ -328,7 +328,8 @@ async def settings(_):
     return web.json_response({
         "values": {k: db.kv_get(f"set_{k}") or "" for k in SETTINGS},
         "defaults": {"model": config.MODEL, "temperature": "0.7",
-                     "history_limit": str(config.HISTORY_LIMIT), "instructions": ""},
+                     "history_limit": str(config.HISTORY_LIMIT), "instructions": "", "fallback": "1"},
+        "fallback_chain": llm.FALLBACK,
     })
 
 

@@ -61,9 +61,12 @@ async def answer(m: Message, parts, history_text, query_text=None):
     try:
         reply = await typing_while(m.chat.id, agent.run(m.chat.id, parts, history_text, query_text))
     except Exception as e:
-        log.exception("agent error")
-        db.log_event("error", "agent", f"{type(e).__name__}: {e}")
-        reply = f"⚠️ Ошибка: {type(e).__name__}: {e}"
+        if isinstance(e, llm.QuotaExhausted):
+            reply = f"⏳ {e}"
+        else:
+            log.exception("agent error")
+            db.log_event("error", "agent", f"{type(e).__name__}: {e}")
+            reply = f"⚠️ Ошибка: {type(e).__name__}: {str(e)[:300]}"
     await send_long(m.chat.id, reply)
 
 

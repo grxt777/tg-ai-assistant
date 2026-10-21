@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import { act, api, useApi } from "@/lib/api";
 import { Button, Card, ErrorNote, Input, PageHeader, Select, Textarea } from "@/components/ui";
 
-type S = { model: string; temperature: string; history_limit: string; instructions: string };
+type S = { model: string; temperature: string; history_limit: string; instructions: string; fallback: string };
 
 export default function SettingsPage() {
-  const { data, error, reload } = useApi<{ values: S; defaults: S }>("settings");
+  const { data, error, reload } = useApi<{ values: S; defaults: S; fallback_chain: string[] }>("settings");
   const models = useApi<{ models: string[] }>("models");
   const [v, setV] = useState<S | null>(null);
   useEffect(() => { if (data) setV(data.values); }, [data]);
@@ -28,6 +28,14 @@ export default function SettingsPage() {
             {(models.data?.models || []).map((m) => <option key={m} value={m}>{m}</option>)}
           </Select>
           <p className="mt-2 text-xs text-muted">flash — быстрая и бесплатная. pro — умнее, но лимиты бесплатного тарифа намного меньше. lite — самые высокие лимиты.</p>
+        </Card>
+        <Card title="Запасные модели">
+          <label className="relative flex items-center justify-between gap-3">
+            <span className="text-sm">Переключаться, когда дневной лимит модели закончился</span>
+            <input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={(v.fallback || d.fallback) !== "0"}
+              onChange={(e) => setV({ ...v, fallback: e.target.checked ? "1" : "0" })} />
+          </label>
+          <p className="relative mt-2 text-xs text-muted">У каждой модели свой бесплатный лимит в сутки. Порядок: {data.fallback_chain.join(" → ")}.</p>
         </Card>
         <Card title={`Креативность (temperature): ${temp.toFixed(1)}`}>
           <input type="range" min={0} max={1.5} step={0.1} value={temp} onChange={set("temperature")} className="w-full accent-[var(--accent)]" />
