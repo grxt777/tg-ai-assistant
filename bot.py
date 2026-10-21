@@ -138,6 +138,9 @@ async def cmd_reset(m: Message):
 @dp.message(F.document)
 async def on_document(m: Message):
     name = m.document.file_name or "file.txt"
+    mime = m.document.mime_type or ""
+    if mime.startswith("image/"):  # картинка, отправленная файлом (без сжатия)
+        return await on_photo(m)
     if not name.lower().endswith(DOC_EXT):
         return await m.answer("Пока понимаю только: " + ", ".join(DOC_EXT))
     data = (await bot.download(m.document)).read()
@@ -162,9 +165,11 @@ async def on_voice(m: Message):
 
 @dp.message(F.photo)
 async def on_photo(m: Message):
-    data = (await bot.download(m.photo[-1])).read()
+    media = m.photo[-1] if m.photo else m.document
+    data = (await bot.download(media)).read()
+    mime = "image/jpeg" if m.photo else m.document.mime_type
     caption = m.caption or "Что на фото?"
-    parts = [types.Part.from_bytes(data=data, mime_type="image/jpeg"), types.Part.from_text(text=caption)]
+    parts = [types.Part.from_bytes(data=data, mime_type=mime), types.Part.from_text(text=caption)]
     await answer(m, parts, f"[фото] {caption}", query_text=caption)
 
 
