@@ -1,0 +1,15 @@
+app = "tg-ai-assistant-grxt777"
+primary_region = "fra"
+
+[build]
+
+[env]
+  DB_PATH = "/data/agent.db"
+
+[mounts]
+  source = "agent_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
