@@ -1,10 +1,11 @@
 """Telegram-бот: точка входа. Запуск: python bot.py"""
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 from google.genai import types
 
 import agent
@@ -32,6 +33,7 @@ async def owner_only(handler, event: Message, data):
         db.kv_set("owner_id", uid)
         owner = uid
         log.info("Владелец назначен: %s", uid)
+        await api.setup_menu_button(bot)
     if uid != owner:
         await event.answer("Это приватный ассистент 🙂")
         return
@@ -75,8 +77,17 @@ async def cmd_start(m: Message):
         "ставлю напоминания. Пришли .txt/.md/.pdf — добавлю в базу знаний.\n\n"
         "/memory — что я о тебе помню\n/forget <id> — удалить запись памяти\n"
         "/tables — мои таблицы\n/docs — документы\n/deldoc <id> — удалить документ\n"
-        "/reminders — напоминания\n/reset — очистить историю диалога (память останется)"
+        "/reminders — напоминания\n/panel — веб-панель\n/reset — очистить историю диалога (память останется)"
     )
+
+
+@dp.message(Command("panel"))
+async def cmd_panel(m: Message):
+    url = os.getenv("ADMIN_URL")
+    if not url:
+        return await m.answer("Адрес панели не настроен (ADMIN_URL).")
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть панель", web_app=WebAppInfo(url=url))]])
+    await m.answer("Панель управления ассистентом:", reply_markup=kb)
 
 
 @dp.message(Command("memory"))

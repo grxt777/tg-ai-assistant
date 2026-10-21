@@ -50,7 +50,7 @@ export default function TablesPage() {
               {tables.map((t) => (
                 <li key={t.name}>
                   <button onClick={() => { setSel(t.name); setPage(0); }}
-                    className={cx("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm", sel === t.name ? "bg-hover font-medium" : "hover:bg-hover")}>
+                    className={cx("flex w-full items-center justify-between rounded-xl px-2 py-2 text-left text-sm", sel === t.name ? "bg-hover font-medium" : "hover:bg-hover")}>
                     <span className="truncate font-mono text-xs">{t.name}</span>
                     <span className="text-xs tabular-nums text-muted">{t.rows}</span>
                   </button>
@@ -64,7 +64,7 @@ export default function TablesPage() {
           {current && (
             <Card title={current.name} actions={<ConfirmButton onConfirm={() => drop(current.name)}>Удалить таблицу</ConfirmButton>}>
               {current.description && <p className="mb-2 text-sm text-muted">{current.description}</p>}
-              <pre className="scroll-thin mb-4 overflow-x-auto rounded-lg bg-hover p-2 font-mono text-[11px] text-muted">{current.schema}</pre>
+              <pre className="scroll-thin mb-4 overflow-x-auto rounded-2xl bg-hover p-2 font-mono text-[11px] text-muted">{current.schema}</pre>
               {rows ? <Grid columns={rows.columns || []} rows={rows.rows || []} /> : <Empty>Загрузка…</Empty>}
               {rows?.total !== undefined && rows.total > PAGE && (
                 <div className="mt-3 flex items-center justify-between text-xs text-muted">
@@ -86,7 +86,7 @@ export default function TablesPage() {
               <Button variant="primary" onClick={run} disabled={running || !sql.trim()}>{running ? "Выполняю…" : "Выполнить"}</Button>
               <span className="text-xs text-muted">⌘/Ctrl + Enter</span>
             </div>
-            {sqlErr && <div className="mt-3 rounded-lg bg-bad/10 px-3 py-2 font-mono text-xs text-bad">{sqlErr}</div>}
+            {sqlErr && <div className="mt-3 rounded-2xl bg-bad/10 px-3 py-2 font-mono text-xs text-bad">{sqlErr}</div>}
             {res && (
               <div className="mt-3">
                 {res.columns ? <>

@@ -25,17 +25,16 @@ export default function EventsPage() {
       </div>
       <Card>
         {data?.events.length ? (
-          <ul className="font-mono text-xs">
+          <ul className="relative font-mono text-xs">
             {data.events.map((e) => (
               <li key={e.id} className="border-b border-line last:border-0">
-                <button onClick={() => setOpen(open === e.id ? null : e.id)} className="flex w-full items-center gap-3 py-2 text-left hover:bg-hover">
-                  <span className="w-28 shrink-0 text-muted">{fmtDate(e.created_at)}</span>
-                  <span className="w-24 shrink-0"><Badge tone={TONE[e.kind] || "neutral"}>{LABEL[e.kind] || e.kind}</Badge></span>
-                  <span className="w-40 shrink-0 truncate">{e.name}</span>
-                  <span className="min-w-0 flex-1 truncate text-muted">{e.data}</span>
-                  <span className="w-16 shrink-0 text-right tabular-nums text-muted">{e.ms !== null ? `${(e.ms / 1000).toFixed(1)} с` : ""}</span>
+                <button onClick={() => setOpen(open === e.id ? null : e.id)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-1 py-2.5 text-left hover:bg-hover md:flex-nowrap">
+                  <span className="shrink-0"><Badge tone={TONE[e.kind] || "neutral"}>{LABEL[e.kind] || e.kind}</Badge></span>
+                  <span className="min-w-0 flex-1 truncate md:w-40 md:flex-none">{e.name}</span>
+                  <span className="hidden min-w-0 flex-1 truncate text-muted md:block">{e.data}</span>
+                  <span className="shrink-0 tabular-nums text-muted">{e.ms !== null ? `${(e.ms / 1000).toFixed(1)} с · ` : ""}{fmtDate(e.created_at)}</span>
                 </button>
-                {open === e.id && <pre className="mb-2 whitespace-pre-wrap break-all rounded-lg bg-hover p-3">{e.data}</pre>}
+                {open === e.id && <pre className="mb-2 whitespace-pre-wrap break-all rounded-2xl bg-hover p-3">{e.data}</pre>}
               </li>
             ))}
           </ul>

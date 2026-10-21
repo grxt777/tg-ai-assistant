@@ -40,7 +40,7 @@ python bot.py
 Папка `admin/` — Next.js-панель (деплой на Vercel, Root Directory = `admin`). Ходит в HTTP API бота (`api.py`, порт 8080 на Fly).
 
 Переменные:
-- бот (Fly secrets): `ADMIN_API_TOKEN`
+- бот (Fly secrets): `ADMIN_API_TOKEN`, `ADMIN_URL` (адрес панели — для кнопки Mini App в меню бота)
 - админка (Vercel): `BOT_API_URL`, `ADMIN_API_TOKEN` (тот же), `ADMIN_PASSWORD`, `SESSION_SECRET`
 
 Что умеет: обзор состояния и активности, переписка (+ написать ассистенту из панели), память (поиск по смыслу, правка),

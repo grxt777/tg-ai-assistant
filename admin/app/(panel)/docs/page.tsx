@@ -24,7 +24,7 @@ function DocRow({ d, onDeleted }: { d: Doc; onDeleted: () => void }) {
       {open && (
         <div className="mt-3 flex max-h-96 flex-col gap-2 overflow-y-auto scroll-thin">
           {chunks === null ? <Empty>Загрузка…</Empty> : chunks.map((c) => (
-            <div key={c.idx} className="rounded-lg bg-hover p-3 text-xs">
+            <div key={c.idx} className="rounded-2xl bg-hover p-3 text-xs">
               <div className="mb-1 font-mono text-muted">фрагмент {c.idx + 1}</div>
               <div className="whitespace-pre-wrap">{c.content}</div>
             </div>

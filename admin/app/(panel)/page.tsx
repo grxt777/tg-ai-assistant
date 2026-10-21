@@ -87,7 +87,7 @@ export default function OverviewPage() {
                   ["/chat", "Сообщений в истории", data.counts.messages],
                 ] as const).map(([href, label, v]) => (
                   <li key={href}>
-                    <Link href={href} className="flex justify-between rounded-md px-2 py-1.5 hover:bg-hover">
+                    <Link href={href} className="flex justify-between rounded-xl px-2 py-2 hover:bg-hover">
                       <span className="text-muted">{label}</span><span className="font-medium tabular-nums">{v}</span>
                     </Link>
                   </li>

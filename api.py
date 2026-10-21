@@ -1,10 +1,13 @@
 """HTTP API для веб-админки. Работает в том же процессе, что и бот, защищён токеном ADMIN_API_TOKEN."""
+import hashlib
 import hmac
+import json
 import logging
 import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl
 
 from aiohttp import web
 from google.genai import types
@@ -65,6 +68,26 @@ routes = web.RouteTableDef()
 @routes.get("/health")
 async def health(_):
     return web.json_response({"ok": True})
+
+
+# ---------- вход из Telegram Mini App ----------
+@routes.post("/api/tg-verify")
+async def tg_verify(req):
+    """Проверяет initData Mini App подписью токена бота и что это владелец."""
+    init = (await req.json()).get("initData") or ""
+    pairs = dict(parse_qsl(init, keep_blank_values=True))
+    got = pairs.pop("hash", "")
+    check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+    secret = hmac.new(b"WebAppData", config.TELEGRAM_TOKEN.encode(), hashlib.sha256).digest()
+    want = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    if not got or not hmac.compare_digest(got, want):
+        return web.json_response({"error": "подпись Telegram не сошлась"}, status=403)
+    if time.time() - int(pairs.get("auth_date", 0)) > 86400:
+        return web.json_response({"error": "данные входа устарели, открой панель заново"}, status=403)
+    user = json.loads(pairs.get("user", "{}"))
+    if not db.owner_chat() or user.get("id") != db.owner_chat():
+        return web.json_response({"error": "панель доступна только владельцу"}, status=403)
+    return web.json_response({"ok": True, "user": {"id": user["id"], "first_name": user.get("first_name", "")}})
 
 
 # ---------- обзор ----------
@@ -330,13 +353,25 @@ async def models(_):
 
 
 def _dumps(obj):
-    import json
     return json.dumps(obj, ensure_ascii=False, default=str)
+
+
+async def setup_menu_button(bot):
+    """Кнопка «Панель» в меню бота — только у владельца."""
+    url, owner = os.getenv("ADMIN_URL"), db.owner_chat()
+    if not url or not owner:
+        return
+    from aiogram.types import MenuButtonWebApp, WebAppInfo
+    try:
+        await bot.set_chat_menu_button(chat_id=owner, menu_button=MenuButtonWebApp(text="Панель", web_app=WebAppInfo(url=url)))
+    except Exception as e:
+        log.warning("Не смог поставить кнопку меню: %s", e)
 
 
 async def start(bot):
     global _bot
     _bot = bot
+    await setup_menu_button(bot)
     if not os.getenv("ADMIN_API_TOKEN"):
         log.warning("ADMIN_API_TOKEN не задан — API админки выключен")
         return
