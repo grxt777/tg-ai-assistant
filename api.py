@@ -15,12 +15,13 @@ from google.genai import types
 import agent
 import config
 import db
+import journal
 import llm
 import tools
 
 log = logging.getLogger(__name__)
 STARTED = time.time()
-SETTINGS = ("model", "temperature", "history_limit", "instructions", "fallback")
+SETTINGS = ("model", "temperature", "history_limit", "instructions", "fallback", "journal_time")
 _bot = None
 
 
@@ -312,7 +313,31 @@ async def reminder_del(req):
     return web.json_response({"ok": True})
 
 
-# ---------- журнал ----------
+# ---------- дневник ----------
+@routes.get("/api/journal/stats")
+async def journal_stats(req):
+    return web.json_response(journal.stats(_int(req, "days", 7, 1, 3660)))
+
+
+@routes.get("/api/journal/days")
+async def journal_days(req):
+    return web.json_response({"days": journal.list_days(req.query.get("before") or None, _int(req, "limit", 30, 1, 200),
+                                                        req.query.get("q", "").strip() or None)})
+
+
+@routes.get("/api/journal/days/{date}")
+async def journal_day(req):
+    return web.json_response(journal.get_day(req.match_info["date"]))
+
+
+@routes.delete("/api/journal/{kind}/{id}")
+async def journal_del(req):
+    kind, id = req.match_info["kind"], req.match_info["id"]
+    journal.delete(kind, None if kind == "day" else id, id if kind == "day" else None)
+    return web.json_response({"ok": True})
+
+
+# ---------- журнал событий ----------
 @routes.get("/api/events")
 async def events(req):
     kind, limit = req.query.get("kind", ""), _int(req, "limit", 200, 1, 1000)
@@ -328,7 +353,8 @@ async def settings(_):
     return web.json_response({
         "values": {k: db.kv_get(f"set_{k}") or "" for k in SETTINGS},
         "defaults": {"model": config.MODEL, "temperature": "0.7",
-                     "history_limit": str(config.HISTORY_LIMIT), "instructions": "", "fallback": "1"},
+                     "history_limit": str(config.HISTORY_LIMIT), "instructions": "", "fallback": "1",
+                     "journal_time": "22:00"},
         "fallback_chain": llm.FALLBACK,
     })
 

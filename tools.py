@@ -8,9 +8,12 @@ from google.genai import types
 
 import config
 import db
+import journal
 import llm
 
 S, I = {"type": "STRING"}, {"type": "INTEGER"}
+DATE = {"type": "STRING", "description": "YYYY-MM-DD, по умолчанию сегодня"}
+SCORE = {"type": "INTEGER", "description": "1–10"}
 
 
 def _fn(name, desc, props=None, required=()):
@@ -53,6 +56,43 @@ DECLARATIONS = [
         ["when", "text"]),
     _fn("list_reminders", "Список активных напоминаний."),
     _fn("cancel_reminder", "Отменить напоминание по id.", {"id": I}, ["id"]),
+    _fn("journal_log",
+        "Записать в дневник: итоги дня, оценки, события, заметки, доходы и расходы (в сумах). Оценки ставишь САМ "
+        "по правилам из системного промпта, владельца не спрашиваешь. Вызывай, когда "
+        "владелец рассказывает, как прошёл день, что делал, или сообщает о трате/заработке — даже об одной. "
+        "Можно вызывать сколько угодно раз за день: события и деньги ДОБАВЛЯЮТСЯ (не повторяй уже записанное), "
+        "summary и оценки ПЕРЕЗАПИСЫВАЮТСЯ — передавай их только когда есть что обновить.",
+        {"date": DATE,
+         "summary": {"type": "STRING", "description": "резюме всего дня в 1–3 предложения; если за день уже "
+                     "было резюме — объедини старое с новым"},
+         "score": {"type": "INTEGER", "description": "итоговая оценка дня 1–10 (твоя)"},
+         "verdict": {"type": "STRING", "description": "твоё объяснение оценок в 1–3 предложения: что было "
+                     "хорошо/плохо и как день выглядит на фоне последних дней (лучше/хуже обычного, тренд)"},
+         **{k: {**SCORE, "description": f"{v} 1–10 (твоя оценка)"} for k, v in journal.PARAMS.items()},
+         "entries": {"type": "ARRAY", "description": "что происходило: события и заметки/мысли, по одному на пункт",
+                     "items": {"type": "OBJECT", "properties": {
+                         "kind": {"type": "STRING", "enum": ["event", "note"]},
+                         "category": {"type": "STRING", "description": "работа, учёба, спорт, здоровье, люди, "
+                                      "семья, отдых, быт, финансы, другое"},
+                         "text": S}, "required": ["kind", "text"]}},
+         "transactions": {"type": "ARRAY", "description": "деньги в сумах (переведи «50к» → 50000, «1.2 млн» → 1200000)",
+                          "items": {"type": "OBJECT", "properties": {
+                              "type": {"type": "STRING", "enum": ["income", "expense"]},
+                              "amount": {"type": "NUMBER"},
+                              "category": {"type": "STRING", "description":
+                                           "расход: еда, кафе, транспорт, жильё, связь, здоровье, одежда, развлечения, "
+                                           "подарки, образование, техника, долги, другое; доход: зарплата, фриланс, "
+                                           "бизнес, подарок, долги, другое"},
+                              "note": S}, "required": ["type", "amount", "category"]}}}),
+    _fn("journal_day", "Показать запись дневника за день: резюме, оценки, события, деньги (с id для удаления).",
+        {"date": DATE}),
+    _fn("journal_delete", "Удалить ошибочную запись дневника: entry или transaction по id, либо day целиком по date.",
+        {"kind": {"type": "STRING", "enum": ["entry", "transaction", "day"]}, "id": I, "date": DATE}, ["kind"]),
+    _fn("journal_stats",
+        "Аналитика дневника за последние N дней (7 — неделя, 30 — месяц, 365 — год) со сравнением с предыдущим "
+        "таким же периодом: доходы, расходы, баланс, траты по категориям, средние оценки, лучшие/худшие дни, серия. "
+        "Цифры уже посчитаны — не пересчитывай их сам.",
+        {"days": I}, ["days"]),
 ]
 
 TOOLS = [types.Tool(function_declarations=DECLARATIONS)]
@@ -133,11 +173,37 @@ async def _cancel_reminder(id, **_):
     return {"ok": True}
 
 
+async def _journal_log(date=None, summary=None, entries=None, transactions=None, verdict=None, **kw):
+    emb = (await llm.embed([f"{date or journal.today()}: {summary}"]))[0] if summary else None
+    day = journal.log_day(date, summary, {k: kw.get(k) for k in journal.SCORES}, entries, transactions, emb, verdict)
+    day.pop("updated_at", None)
+    return {"ok": True, "day": day}
+
+
+async def _journal_day(date=None, **_):
+    return journal.get_day(date)
+
+
+async def _journal_delete(kind, id=None, date=None, **_):
+    journal.delete(kind, id, date)
+    return {"ok": True}
+
+
+async def _journal_stats(days=7, **_):
+    s = journal.stats(days)
+    if s["days"] > 31:  # за длинный период модели хватит помесячной разбивки
+        s.pop("series")
+    else:
+        s.pop("by_month")
+    return s
+
+
 HANDLERS = {
     "save_memory": _save_memory, "search_memory": _search_memory, "update_memory": _update_memory,
     "delete_memory": _delete_memory, "list_tables": _list_tables, "create_table": _create_table,
     "run_sql": _run_sql, "add_reminder": _add_reminder, "list_reminders": _list_reminders,
-    "cancel_reminder": _cancel_reminder,
+    "cancel_reminder": _cancel_reminder, "journal_log": _journal_log, "journal_day": _journal_day,
+    "journal_delete": _journal_delete, "journal_stats": _journal_stats,
 }
 
 

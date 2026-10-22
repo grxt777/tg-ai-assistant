@@ -2,6 +2,9 @@
 import asyncio
 import logging
 import os
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
@@ -12,6 +15,7 @@ import agent
 import api
 import config
 import db
+import journal
 import llm
 from tools import _to_local
 
@@ -78,6 +82,8 @@ async def cmd_start(m: Message):
         "Привет! Я твой личный ассистент с памятью.\n\n"
         "Просто пиши (или шли голосовые/фото). Я запоминаю важное о тебе, веду свои таблицы, "
         "ставлю напоминания. Пришли .txt/.md/.pdf — добавлю в базу знаний.\n\n"
+        "Вечером расскажи, как прошёл день, что делал и сколько потратил/заработал — я веду дневник "
+        "и считаю аналитику за неделю, месяц и год (смотри в панели → Дневник).\n\n"
         "/memory — что я о тебе помню\n/forget <id> — удалить запись памяти\n"
         "/tables — мои таблицы\n/docs — документы\n/deldoc <id> — удалить документ\n"
         "/reminders — напоминания\n/panel — веб-панель\n/reset — очистить историю диалога (память останется)"
@@ -195,6 +201,25 @@ async def on_text(m: Message):
     await answer(m, [types.Part.from_text(text=m.text)], m.text)
 
 
+# ---------- вечерний вопрос для дневника ----------
+NUDGE = ("📓 Как прошёл день? Расскажи, что делал, какие были события, как себя чувствовал, "
+         "сколько потратил и заработал — я запишу, оценю день и сравню с прошлыми.")
+
+
+async def journal_nudge():
+    at, owner = db.setting("journal_time", "22:00"), db.owner_chat()
+    if not owner or not re.fullmatch(r"\d{2}:\d{2}", at):  # «off» — выключено
+        return
+    now = datetime.now(ZoneInfo(config.TZ))
+    day = now.date().isoformat()
+    if now.strftime("%H:%M") < at or db.kv_get("journal_nudged") == day:
+        return
+    db.kv_set("journal_nudged", day)
+    if not journal.is_logged(day):
+        db.add_message(owner, "model", NUDGE)  # чтобы ответ владельца модель поняла как итоги дня
+        await bot.send_message(owner, NUDGE)
+
+
 # ---------- фоновые напоминания ----------
 async def reminder_loop():
     while True:
@@ -211,6 +236,7 @@ async def reminder_loop():
                     await send_long(r["chat_id"], text)
                 else:
                     await bot.send_message(r["chat_id"], f"⏰ {r['text']}")
+            await journal_nudge()
         except Exception:
             log.exception("reminder loop")
         await asyncio.sleep(20)

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { act, api, useApi } from "@/lib/api";
 import { Button, Card, ErrorNote, Input, PageHeader, Select, Textarea } from "@/components/ui";
 
-type S = { model: string; temperature: string; history_limit: string; instructions: string; fallback: string };
+type S = { model: string; temperature: string; history_limit: string; instructions: string; fallback: string; journal_time: string };
 
 export default function SettingsPage() {
   const { data, error, reload } = useApi<{ values: S; defaults: S; fallback_chain: string[] }>("settings");
@@ -44,6 +44,16 @@ export default function SettingsPage() {
         <Card title="Сколько сообщений диалога помнить">
           <Input type="number" min={2} max={200} placeholder={`по умолчанию ${d.history_limit}`} value={v.history_limit} onChange={set("history_limit")} />
           <p className="mt-2 text-xs text-muted">Больше — лучше держит нить разговора, но тратит больше токенов. Долговременная память от этого не зависит.</p>
+        </Card>
+        <Card title="Вечерний вопрос для дневника">
+          <div className="flex gap-2">
+            <Input type="time" value={v.journal_time === "off" ? "" : v.journal_time || d.journal_time}
+              onChange={(e) => setV({ ...v, journal_time: e.target.value })} disabled={v.journal_time === "off"} />
+            <Button onClick={() => setV({ ...v, journal_time: v.journal_time === "off" ? "" : "off" })}>
+              {v.journal_time === "off" ? "Включить" : "Выключить"}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted">В это время бот спросит, как прошёл день, — если ты ещё не рассказал сам.</p>
         </Card>
         <Card title="Дополнительные указания ассистенту" className="lg:col-span-2">
           <Textarea rows={6} value={v.instructions} onChange={set("instructions")}

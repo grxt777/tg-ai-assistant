@@ -9,6 +9,7 @@ const I = {
   home: "M3 11.5 12 4l9 7.5M5.5 9.5V20h13V9.5",
   chat: "M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5z",
   memory: "M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5 1.2 1.3 1.2 2.2v.8h4v-.8c0-.9.6-1.7 1.2-2.2A5.5 5.5 0 0 0 12 3.5zM10 20h4",
+  journal: "M6 3.5h11.5v17H6a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 6 3.5zM9 8h5.5M9 11.5h5.5M8 3.5v17",
   bell: "M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   tables: "M4 5h16v14H4zM4 10h16M10 5v14",
@@ -30,14 +31,15 @@ export function Icon({ d, className, strokeWidth = 1.9 }: { d: string; className
 const TABS = [
   { href: "/", label: "Обзор", icon: I.home },
   { href: "/chat", label: "Чат", icon: I.chat },
-  { href: "/memory", label: "Память", icon: I.memory },
+  { href: "/journal", label: "Дневник", icon: I.journal },
   { href: "/reminders", label: "Время", icon: I.bell },
   { href: "#more", label: "Ещё", icon: I.more },
 ];
 const MORE = [
+  { href: "/memory", label: "Память", icon: I.memory },
   { href: "/tables", label: "Таблицы", icon: I.tables },
   { href: "/docs", label: "Документы", icon: I.docs },
-  { href: "/events", label: "Журнал", icon: I.events },
+  { href: "/events", label: "Логи", icon: I.events },
   { href: "/settings", label: "Настройки", icon: I.settings },
 ];
 const SIDEBAR = [...TABS.slice(0, 2), TABS[2], { ...TABS[3], label: "Напоминания" }, ...MORE];
