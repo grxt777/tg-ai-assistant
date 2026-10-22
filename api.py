@@ -325,6 +325,17 @@ async def journal_days(req):
                                                         req.query.get("q", "").strip() or None)})
 
 
+@routes.get("/api/journal/params")
+async def journal_params(_):
+    return web.json_response({"params": journal.params(all=True)})
+
+
+@routes.put("/api/journal/params/{key}")
+async def journal_param_save(req):
+    b = await req.json()
+    return web.json_response(journal.save_param(req.match_info["key"], b.get("label"), b.get("description"), b.get("active")))
+
+
 @routes.get("/api/journal/days/{date}")
 async def journal_day(req):
     return web.json_response(journal.get_day(req.match_info["date"]))

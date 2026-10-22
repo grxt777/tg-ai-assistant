@@ -4,14 +4,13 @@ import { act, api, useApi } from "@/lib/api";
 import { haptic } from "@/lib/tg";
 import { Badge, Button, Card, ConfirmButton, Empty, ErrorNote, Input, PageHeader, Tabs, cx } from "@/components/ui";
 
-const SCORES = ["score", "busy", "mood", "energy", "productivity"] as const;
-type Key = (typeof SCORES)[number];
-type Scores = Record<Key, number | null>;
-type Point = Scores & { date: string; income: number; expense: number };
+type Param = { key: string; label: string; description?: string; active?: number };
+type Avg = Record<string, number | null>;
+type Point = { date: string; score: number | null; scores: Record<string, number>; income: number; expense: number };
 type Month = { month: string; income: number; expense: number; score: number | null; logged: number };
-type Period = { income: number; expense: number; net: number; avg: Scores; logged: number };
+type Period = { income: number; expense: number; net: number; avg: Avg; logged: number };
 type Stats = Period & {
-  days: number; from: string; to: string; params: Record<Exclude<Key, "score">, string>;
+  days: number; from: string; to: string; params: Param[];
   prev: Period; streak: number;
   expense_by_category: { category: string; amount: number }[];
   income_by_category: { category: string; amount: number }[];
@@ -20,15 +19,14 @@ type Stats = Period & {
   worst_days: { date: string; score: number; summary: string }[];
   series: Point[]; by_month: Month[];
 };
-type DayRow = Scores & { date: string; summary: string; income: number; expense: number; entries: number };
-type Day = Scores & {
-  date: string; summary: string; verdict: string;
+type DayRow = { date: string; summary: string; score: number | null; income: number; expense: number; entries: number };
+type Day = {
+  date: string; summary: string; verdict: string; score: number | null; scores: Record<string, number>; params: Param[];
   entries: { id: number; kind: "event" | "note"; category: string; text: string }[];
   transactions: { id: number; type: "income" | "expense"; amount: number; category: string; note: string }[];
   income: number; expense: number;
 };
 
-const LABEL: Record<Key, string> = { score: "Итог дня", busy: "Насыщенность", mood: "Настроение", energy: "Энергия", productivity: "Продуктивность" };
 const RANGES: [string, string][] = [["7", "Неделя"], ["30", "Месяц"], ["365", "Год"]];
 
 // ---------- форматирование ----------
@@ -177,12 +175,13 @@ function DaySheet({ date, onClose, onChange }: { date: string; onClose: () => vo
               </div>
             )}
 
-            {SCORES.some((k) => data[k] != null) && (
+            {(data.score != null || Object.keys(data.scores).length > 0) && (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {SCORES.map((k) => (
-                  <div key={k} className={cx("rounded-2xl bg-hover px-3 py-2", k === "score" && "col-span-2 sm:col-span-1")}>
-                    <div className="text-[11px] text-muted">{LABEL[k]}</div>
-                    <div className="text-lg font-semibold tabular-nums">{data[k] ?? "—"}<span className="text-xs font-normal text-muted">/10</span></div>
+                {[{ key: "score", label: "Итог дня", value: data.score },
+                  ...data.params.filter((p) => data.scores[p.key] != null).map((p) => ({ ...p, value: data.scores[p.key] }))].map((p) => (
+                  <div key={p.key} className={cx("rounded-2xl bg-hover px-3 py-2", p.key === "score" && "col-span-2 sm:col-span-1")}>
+                    <div className="text-[11px] text-muted">{p.label}</div>
+                    <div className="text-lg font-semibold tabular-nums">{p.value ?? "—"}<span className="text-xs font-normal text-muted">/10</span></div>
                   </div>
                 ))}
               </div>
@@ -297,7 +296,7 @@ export default function JournalPage() {
     ? s.by_month.map((m) => ({ key: m.month, label: fmtMonth(m.month), values: [m.score],
         title: <>{parse(m.month).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}: средняя оценка <b className="text-fg">{m.score ?? "—"}</b> · записано дней {m.logged}</> }))
     : s.series.map((p) => ({ key: p.date, label: range === "7" ? fmtDay(p.date, { weekday: "short" }) : String(parse(p.date).getDate()), values: [p.score],
-        title: <>{fmtDay(p.date)}: итог <b className="text-fg">{p.score ?? "—"}</b>{p.mood != null && <> · настроение {p.mood} · энергия {p.energy ?? "—"}</>}</> })), [s, year, range]);
+        title: <>{fmtDay(p.date)}: итог <b className="text-fg">{p.score ?? "—"}</b>{s.params.filter((x) => p.scores[x.key] != null).slice(0, 3).map((x) => <span key={x.key}> · {x.label.toLowerCase()} {p.scores[x.key]}</span>)}</> })), [s, year, range]);
 
   const moneyItems = useMemo<BarItem[]>(() => !s ? [] : (year ? s.by_month.map((m) => ({ ...m, key: m.month, label: fmtMonth(m.month) }))
     : s.series.map((p) => ({ ...p, key: p.date, label: range === "7" ? fmtDay(p.date, { weekday: "short" }) : String(parse(p.date).getDate()) })))
@@ -335,10 +334,10 @@ export default function JournalPage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <Card title="Параметры дня">
               <ul className="flex flex-col gap-3">
-                {(Object.keys(s.params) as Exclude<Key, "score">[]).map((k) => (
+                {s.params.map(({ key: k, label }) => (
                   <li key={k} className="text-sm">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span>{LABEL[k]}</span>
+                      <span>{label}</span>
                       <span className="font-semibold tabular-nums">{s.avg[k] ?? "—"}<span className="text-xs font-normal text-muted">/10</span></span>
                     </div>
                     <div className="mt-1 h-1.5 rounded bg-hover"><div className="h-full rounded bg-accent" style={{ width: `${(s.avg[k] || 0) * 10}%` }} /></div>
@@ -384,6 +383,7 @@ export default function JournalPage() {
           {range !== "7" && <Card title="Календарь"><Calendar series={s.series} onOpen={setOpen} /></Card>}
 
           <History onOpen={setOpen} version={version} />
+          <Criteria onChange={reload} />
         </div>
       )}
       {open && <DaySheet date={open} onClose={() => setOpen(null)} onChange={changed} />}
@@ -398,5 +398,31 @@ function StatTile({ label, value, hint }: { label: string; value: ReactNode; hin
       <div className="relative mt-1 truncate text-2xl font-semibold tabular-nums">{value}</div>
       <div className="relative mt-1 text-[11px] leading-snug text-muted">{hint}</div>
     </div>
+  );
+}
+
+/** Критерии оценки: бот добавляет их сам (с согласия), здесь можно выключить ненужные. */
+function Criteria({ onChange }: { onChange: () => void }) {
+  const { data, reload } = useApi<{ params: Param[] }>("journal/params");
+  const toggle = async (p: Param) => {
+    if (await act(() => api(`journal/params/${p.key}`, { method: "PUT", body: { active: !p.active } }), p.active ? "Критерий выключен" : "Критерий включён")) {
+      reload(); onChange();
+    }
+  };
+  return (
+    <Card title="Критерии оценки">
+      <p className="relative mb-3 text-xs text-muted">Ассистент оценивает день по ним сам. Новый критерий — просто попроси в чате: «оценивай ещё сон».</p>
+      <ul className="relative">
+        {data?.params.map((p) => (
+          <li key={p.key} className="flex items-start gap-3 border-b border-line py-2.5 last:border-0">
+            <div className={cx("min-w-0 flex-1", !p.active && "opacity-50")}>
+              <div className="text-sm font-medium">{p.label}</div>
+              <div className="text-xs text-muted">{p.description}</div>
+            </div>
+            <input type="checkbox" aria-label={p.label} className="mt-1 h-5 w-5 shrink-0 accent-[var(--accent)]" checked={!!p.active} onChange={() => toggle(p)} />
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

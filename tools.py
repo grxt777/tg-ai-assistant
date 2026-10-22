@@ -68,7 +68,9 @@ DECLARATIONS = [
          "score": {"type": "INTEGER", "description": "итоговая оценка дня 1–10 (твоя)"},
          "verdict": {"type": "STRING", "description": "твоё объяснение оценок в 1–3 предложения: что было "
                      "хорошо/плохо и как день выглядит на фоне последних дней (лучше/хуже обычного, тренд)"},
-         **{k: {**SCORE, "description": f"{v} 1–10 (твоя оценка)"} for k, v in journal.PARAMS.items()},
+         "scores": {"type": "ARRAY", "description": "твои оценки по критериям из системного промпта (ключ критерия → 1–10); "
+                    "критерий, по которому в дне нет информации, пропусти",
+                    "items": {"type": "OBJECT", "properties": {"param": S, "value": I}, "required": ["param", "value"]}},
          "entries": {"type": "ARRAY", "description": "что происходило: события и заметки/мысли, по одному на пункт",
                      "items": {"type": "OBJECT", "properties": {
                          "kind": {"type": "STRING", "enum": ["event", "note"]},
@@ -84,6 +86,16 @@ DECLARATIONS = [
                                            "подарки, образование, техника, долги, другое; доход: зарплата, фриланс, "
                                            "бизнес, подарок, долги, другое"},
                               "note": S}, "required": ["type", "amount", "category"]}}}),
+    _fn("journal_params",
+        "Критерии оценки дня. action=list — показать все (вкл. выключенные); action=save — добавить новый или "
+        "изменить существующий (label, description, active=false — выключить). Новый критерий добавляй ТОЛЬКО после "
+        "явного согласия владельца; сам можешь лишь предложить, если тема часто повторяется.",
+        {"action": {"type": "STRING", "enum": ["list", "save"]},
+         "key": {"type": "STRING", "description": "латиница snake_case, напр. sleep"},
+         "label": {"type": "STRING", "description": "название по-русски, напр. Сон"},
+         "description": {"type": "STRING", "description": "как оценивать: что тянет вверх, что вниз, что считать 5"},
+         "active": {"type": "BOOLEAN"}},
+        ["action"]),
     _fn("journal_day", "Показать запись дневника за день: резюме, оценки, события, деньги (с id для удаления).",
         {"date": DATE}),
     _fn("journal_delete", "Удалить ошибочную запись дневника: entry или transaction по id, либо day целиком по date.",
@@ -175,9 +187,18 @@ async def _cancel_reminder(id, **_):
 
 async def _journal_log(date=None, summary=None, entries=None, transactions=None, verdict=None, **kw):
     emb = (await llm.embed([f"{date or journal.today()}: {summary}"]))[0] if summary else None
-    day = journal.log_day(date, summary, {k: kw.get(k) for k in journal.SCORES}, entries, transactions, emb, verdict)
+    scores = {s.get("param"): s.get("value") for s in kw.get("scores") or []}
+    scores["score"] = kw.get("score")
+    day = journal.log_day(date, summary, scores, entries, transactions, emb, verdict)
+    day.pop("params", None)
     day.pop("updated_at", None)
     return {"ok": True, "day": day}
+
+
+async def _journal_params(action="list", key=None, label=None, description=None, active=None, **_):
+    if action == "save":
+        return {"ok": True, "param": journal.save_param(key, label, description, active)}
+    return {"params": journal.params(all=True)}
 
 
 async def _journal_day(date=None, **_):
@@ -203,6 +224,7 @@ HANDLERS = {
     "delete_memory": _delete_memory, "list_tables": _list_tables, "create_table": _create_table,
     "run_sql": _run_sql, "add_reminder": _add_reminder, "list_reminders": _list_reminders,
     "cancel_reminder": _cancel_reminder, "journal_log": _journal_log, "journal_day": _journal_day,
+    "journal_params": _journal_params,
     "journal_delete": _journal_delete, "journal_stats": _journal_stats,
 }
 
