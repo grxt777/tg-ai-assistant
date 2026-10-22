@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 
 from aiohttp import web
+from aiohttp.abc import AbstractAccessLogger
 from google.genai import types
 
 import agent
@@ -75,12 +76,20 @@ async def health(_):
 # ---------- будильники: забирает команда «Команд» на iPhone ----------
 @routes.get("/alarms/pull")
 async def alarms_pull(req):
-    if not alarms.check_key(req.headers.get("X-Alarm-Key", "")):
+    if not alarms.check_key(req.query.get("k") or req.headers.get("X-Alarm-Key", "")):
         return web.json_response({"error": "unauthorized"}, status=401)
     items = alarms.pull()
     if items:
         db.log_event("tool", "alarms_pull", json.dumps(items, ensure_ascii=False))
-    return web.json_response({"alarms": items}, dumps=_dumps)
+    # голый список "HH:MM": в «Командах» его можно сразу отдать в «Повторить с каждым»
+    return web.json_response([i["time"] for i in items])
+
+
+class _AccessLog(AbstractAccessLogger):
+    """Как стандартный лог, но без query у /alarms/ — там ключ."""
+    def log(self, request, response, time):
+        path = request.path if request.path.startswith("/alarms/") else request.path_qs
+        self.logger.info('%s "%s %s" %s %.0fms', request.remote, request.method, path, response.status, time * 1000)
 
 
 # ---------- вход из Telegram Mini App ----------
@@ -427,7 +436,7 @@ async def start(bot):
         return
     app = web.Application(middlewares=[auth], client_max_size=25 * 1024 * 1024)
     app.add_routes(routes)
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(app, access_log_class=_AccessLog)
     await runner.setup()
     port = int(os.getenv("PORT", "8080"))
     await web.TCPSite(runner, "0.0.0.0", port).start()

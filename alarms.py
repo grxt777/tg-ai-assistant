@@ -29,8 +29,8 @@ def _now():
 
 
 def key():
-    """Отдельный секрет для команды на iPhone (не токен админки)."""
-    k = db.kv_get("alarm_key")
+    """Отдельный секрет для команды на iPhone (не токен админки). ALARM_KEY — если файл команды собран заранее."""
+    k = os.getenv("ALARM_KEY") or db.kv_get("alarm_key")
     if not k:
         k = secrets.token_urlsafe(24)
         db.kv_set("alarm_key", k)
@@ -42,8 +42,9 @@ def check_key(got):
 
 
 def pull_url():
+    """Адрес для «Команд» — ключ прямо в ссылке, чтобы не настраивать заголовки на iPhone."""
     base = os.getenv("PUBLIC_URL") or (f"https://{os.environ['FLY_APP_NAME']}.fly.dev" if os.getenv("FLY_APP_NAME") else "")
-    return f"{base.rstrip('/')}/alarms/pull"
+    return f"{base.rstrip('/')}/alarms/pull?k={key()}" if base else ""
 
 
 def add(when, label=""):
