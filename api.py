@@ -13,6 +13,7 @@ from aiohttp import web
 from google.genai import types
 
 import agent
+import alarms
 import config
 import db
 import journal
@@ -48,7 +49,7 @@ def _rss_mb():
 
 @web.middleware
 async def auth(request, handler):
-    if request.path == "/health":
+    if request.path == "/health" or request.path.startswith("/alarms/"):  # у будильников свой ключ
         return await handler(request)
     token = os.getenv("ADMIN_API_TOKEN", "")
     got = request.headers.get("Authorization", "").removeprefix("Bearer ")
@@ -69,6 +70,17 @@ routes = web.RouteTableDef()
 @routes.get("/health")
 async def health(_):
     return web.json_response({"ok": True})
+
+
+# ---------- будильники: забирает команда «Команд» на iPhone ----------
+@routes.get("/alarms/pull")
+async def alarms_pull(req):
+    if not alarms.check_key(req.headers.get("X-Alarm-Key", "")):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    items = alarms.pull()
+    if items:
+        db.log_event("tool", "alarms_pull", json.dumps(items, ensure_ascii=False))
+    return web.json_response({"alarms": items}, dumps=_dumps)
 
 
 # ---------- вход из Telegram Mini App ----------

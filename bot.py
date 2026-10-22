@@ -12,6 +12,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, W
 from google.genai import types
 
 import agent
+import alarms
 import api
 import config
 import db
@@ -86,7 +87,7 @@ async def cmd_start(m: Message):
         "и считаю аналитику за неделю, месяц и год (смотри в панели → Дневник).\n\n"
         "/memory — что я о тебе помню\n/forget <id> — удалить запись памяти\n"
         "/tables — мои таблицы\n/docs — документы\n/deldoc <id> — удалить документ\n"
-        "/reminders — напоминания\n/panel — веб-панель\n/reset — очистить историю диалога (память останется)"
+        "/reminders — напоминания\n/alarms — будильники iPhone и их настройка\n/panel — веб-панель\n/reset — очистить историю диалога (память останется)"
     )
 
 
@@ -149,6 +150,40 @@ async def cmd_reminders(m: Message):
     rows = db.list_reminders(m.chat.id)
     await m.answer("\n".join(f"#{r['id']} {_to_local(r['due_at'])} [{r['repeat']}/{r['kind']}] {r['text']}"
                              for r in rows) or "Напоминаний нет.")
+
+
+ALARM_SETUP = """⏰ Настройка будильников (один раз, ~5 минут)
+
+1. Открой «Команды» → вкладка «Команды» → «+». Назови команду «Будильники бота».
+2. Добавь действие «Получить содержимое URL»:
+   • URL: {url}
+   • «Показать больше» → Заголовки → добавь: ключ X-Alarm-Key, значение — ключ из следующего сообщения.
+3. «Получить значение словаря»: ключ alarms (из «Содержимое URL»).
+4. «Повторить с каждым» (по «Значение словаря»). Внутри повтора:
+   • «Получить значение словаря»: ключ time из «Повторяемый объект».
+   • «Получить значение словаря»: ключ label из «Повторяемый объект».
+   • «Создать будильник» (приложение «Часы»): время — первое значение (time), подпись — второе (label).
+   Если «Создать будильник» не принимает время из переменной — вставь между ними «Получить даты из» (time).
+5. Сохрани и запусти вручную один раз — iOS спросит разрешения, разреши.
+
+Автоматизация (вкладка «Автоматизация» → «+»):
+• «Приложение» → Telegram → «Закрыто» → «Запускать сразу» → команда «Будильники бота».
+• Ещё одна: «Время суток» → 23:00, ежедневно → «Запускать сразу» → та же команда (для будильников на завтра).
+
+Проверка: напиши мне «поставь будильник через 5 минут», закрой Telegram — будильник появится в «Часах»."""
+
+
+@dp.message(Command("alarms"))
+async def cmd_alarms(m: Message):
+    rows = alarms.listing()
+    status = {"pending": "ждёт отправки", "sent": "стоит на iPhone"}
+    await m.answer("\n".join(f"#{r['id']} {r['at']} {r['label'] or ''} — {status[r['status']]}" for r in rows)
+                   or "Будильников нет.")
+    url = alarms.pull_url()
+    if not url.startswith("http"):
+        return await m.answer("Не знаю свой публичный адрес — задай переменную PUBLIC_URL.")
+    await m.answer(ALARM_SETUP.format(url=url))
+    await m.answer(alarms.key())  # отдельным сообщением, чтобы удобно скопировать
 
 
 @dp.message(Command("reset"))

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from google.genai import types
 
+import alarms
 import config
 import db
 import journal
@@ -56,6 +57,15 @@ DECLARATIONS = [
         ["when", "text"]),
     _fn("list_reminders", "Список активных напоминаний."),
     _fn("cancel_reminder", "Отменить напоминание по id.", {"id": I}, ["id"]),
+    _fn("set_alarm",
+        "Поставить настоящий будильник на iPhone владельца (звонит даже в беззвучном режиме, в отличие от "
+        "add_reminder). Используй, когда просят разбудить или поставить будильник. Повторяющиеся будильники "
+        "не поддерживаются — для них посоветуй поставить в «Часах» вручную.",
+        {"when": {"type": "STRING", "description": "локальное время 'YYYY-MM-DD HH:MM'"},
+         "label": {"type": "STRING", "description": "подпись, напр. «Подъём» или «Созвон»"}},
+        ["when"]),
+    _fn("list_alarms", "Будильники iPhone, которые ждут отправки или уже поставлены."),
+    _fn("cancel_alarm", "Отменить будильник iPhone по id.", {"id": I}, ["id"]),
     _fn("journal_log",
         "Записать в дневник: итоги дня, оценки, события, заметки, доходы и расходы (в сумах). Оценки ставишь САМ "
         "по правилам из системного промпта, владельца не спрашиваешь. Вызывай, когда "
@@ -185,6 +195,18 @@ async def _cancel_reminder(id, **_):
     return {"ok": True}
 
 
+async def _set_alarm(when, label="", **_):
+    return {"ok": True, **alarms.add(when, label)}
+
+
+async def _list_alarms(**_):
+    return {"alarms": alarms.listing()}
+
+
+async def _cancel_alarm(id, **_):
+    return alarms.cancel(id)
+
+
 async def _journal_log(date=None, summary=None, entries=None, transactions=None, verdict=None, **kw):
     emb = (await llm.embed([f"{date or journal.today()}: {summary}"]))[0] if summary else None
     scores = {s.get("param"): s.get("value") for s in kw.get("scores") or []}
@@ -224,7 +246,8 @@ HANDLERS = {
     "delete_memory": _delete_memory, "list_tables": _list_tables, "create_table": _create_table,
     "run_sql": _run_sql, "add_reminder": _add_reminder, "list_reminders": _list_reminders,
     "cancel_reminder": _cancel_reminder, "journal_log": _journal_log, "journal_day": _journal_day,
-    "journal_params": _journal_params,
+    "journal_params": _journal_params, "set_alarm": _set_alarm, "list_alarms": _list_alarms,
+    "cancel_alarm": _cancel_alarm,
     "journal_delete": _journal_delete, "journal_stats": _journal_stats,
 }
 
