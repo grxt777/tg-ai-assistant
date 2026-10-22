@@ -123,6 +123,13 @@ async def _system_prompt(query_text):
     )
 
 
+DONE = {"journal_log": "записал в дневник", "journal_delete": "удалил запись дневника",
+        "journal_params": "обновил критерии", "save_memory": "запомнил", "update_memory": "обновил память",
+        "delete_memory": "удалил из памяти", "add_reminder": "поставил напоминание",
+        "cancel_reminder": "отменил напоминание", "set_alarm": "поставил будильник в очередь",
+        "cancel_alarm": "отменил будильник", "create_table": "создал таблицу", "run_sql": "обновил таблицу"}
+
+
 async def run(chat_id, user_parts, history_text, query_text=None, save_history=True):
     """user_parts — список types.Part (текст, аудио, картинка). history_text — что записать в историю."""
     system = await _system_prompt(query_text if query_text is not None else history_text)
@@ -133,7 +140,18 @@ async def run(chat_id, user_parts, history_text, query_text=None, save_history=T
 
     text, used = None, []
     for _ in range(10):
-        resp = await llm.generate(contents, system, tools.TOOLS)
+        try:
+            resp = await llm.generate(contents, system, tools.TOOLS)
+        except Exception as e:
+            if not used:
+                raise
+            # действия уже выполнены (например, день записан) — не пугаем ошибкой, а говорим, что сделано
+            log.warning("Ответ после инструментов не получен: %s", e)
+            db.log_event("error", "agent", f"после {', '.join(used)}: {type(e).__name__}: {e}")
+            done = ", ".join(dict.fromkeys(DONE.get(u, u) for u in used))
+            text = (f"✅ Сделал: {done}. Но Gemini сейчас не успел написать ответ "
+                    f"({type(e).__name__}). Спроси «что ты записал?», когда захочешь подробности.")
+            break
         if not resp.candidates or not resp.candidates[0].content:
             text = "Модель не вернула ответ (возможно, сработал фильтр). Переформулируй, пожалуйста."
             break

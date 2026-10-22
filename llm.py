@@ -44,12 +44,12 @@ def _minute_wait(e):
 
 
 async def _retry(fn, *args, **kwargs):
-    """Короткие повторы только на 500/503. 429 сразу наверх — generate переключит модель."""
+    """Короткие повторы только на 500/503/504. 429 сразу наверх — generate переключит модель."""
     for attempt in range(2):
         try:
             return await fn(*args, **kwargs)
         except errors.APIError as e:
-            if getattr(e, "code", None) in (500, 503) and attempt == 0:
+            if getattr(e, "code", None) in (500, 503, 504) and attempt == 0:
                 log.warning("Gemini %s, повтор через 2с", e.code)
                 await asyncio.sleep(2)
                 continue
@@ -104,7 +104,7 @@ async def generate(contents, system, tools, _retried=False):
             if code == 404 and model != current_model():  # запасная модель недоступна этому ключу
                 _exhausted[model] = time.time() + 86400
                 continue
-            if code in (500, 503):  # модель перегружена — пробуем следующую
+            if code in (500, 503, 504):  # модель перегружена или не успела — пробуем следующую
                 log.warning("%s: %s — переключаюсь на запасную модель", model, code)
                 continue
             if code != 429:
