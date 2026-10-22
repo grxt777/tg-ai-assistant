@@ -9,6 +9,7 @@ from google.genai import types
 import alarms
 import config
 import db
+import eclass
 import journal
 import llm
 
@@ -66,6 +67,10 @@ DECLARATIONS = [
         ["when"]),
     _fn("list_alarms", "Будильники iPhone, которые ждут отправки или уже поставлены."),
     _fn("cancel_alarm", "Отменить будильник iPhone по id.", {"id": I}, ["id"]),
+    _fn("eclass_tasks",
+        "Несданные задания и дедлайны из e-class INHA (университет владельца). refresh=true — сначала "
+        "сходить на сайт за свежими данными (иначе — из последней проверки, она бывает раз в 2 часа).",
+        {"refresh": {"type": "BOOLEAN"}}),
     _fn("journal_log",
         "Записать в дневник: итоги дня, оценки, события, заметки, доходы и расходы (в сумах). Оценки ставишь САМ "
         "по правилам из системного промпта, владельца не спрашиваешь. Вызывай, когда "
@@ -207,6 +212,14 @@ async def _cancel_alarm(id, **_):
     return alarms.cancel(id)
 
 
+async def _eclass_tasks(refresh=False, **_):
+    if not eclass.connected():
+        return {"error": "e-class не подключён: владелец должен один раз отправить /eclass_login логин пароль"}
+    if refresh:
+        await eclass.sync()
+    return {"tasks": eclass.upcoming(), "checked_at": db.kv_get("eclass_checked")}
+
+
 async def _journal_log(date=None, summary=None, entries=None, transactions=None, verdict=None, **kw):
     emb = (await llm.embed([f"{date or journal.today()}: {summary}"]))[0] if summary else None
     scores = {s.get("param"): s.get("value") for s in kw.get("scores") or []}
@@ -247,7 +260,7 @@ HANDLERS = {
     "run_sql": _run_sql, "add_reminder": _add_reminder, "list_reminders": _list_reminders,
     "cancel_reminder": _cancel_reminder, "journal_log": _journal_log, "journal_day": _journal_day,
     "journal_params": _journal_params, "set_alarm": _set_alarm, "list_alarms": _list_alarms,
-    "cancel_alarm": _cancel_alarm,
+    "cancel_alarm": _cancel_alarm, "eclass_tasks": _eclass_tasks,
     "journal_delete": _journal_delete, "journal_stats": _journal_stats,
 }
 

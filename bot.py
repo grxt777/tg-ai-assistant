@@ -16,6 +16,7 @@ import alarms
 import api
 import config
 import db
+import eclass
 import journal
 import llm
 from tools import _to_local
@@ -87,7 +88,7 @@ async def cmd_start(m: Message):
         "и считаю аналитику за неделю, месяц и год (смотри в панели → Дневник).\n\n"
         "/memory — что я о тебе помню\n/forget <id> — удалить запись памяти\n"
         "/tables — мои таблицы\n/docs — документы\n/deldoc <id> — удалить документ\n"
-        "/reminders — напоминания\n/alarms — будильники iPhone\n/alarm_setup — настройка будильников\n/panel — веб-панель\n/reset — очистить историю диалога (память останется)"
+        "/eclass — дедлайны e-class\n/reminders — напоминания\n/alarms — будильники iPhone\n/alarm_setup — настройка будильников\n/panel — веб-панель\n/reset — очистить историю диалога (память останется)"
     )
 
 
@@ -192,6 +193,50 @@ async def cmd_alarm_setup(m: Message):
     await m.answer(ALARM_AUTOMATION)
 
 
+@dp.message(Command("eclass_login"))
+async def cmd_eclass_login(m: Message):
+    """Логин/пароль сюда, а не в обычный чат: команда не идёт в Gemini и в историю, сообщение удаляется."""
+    args = (m.text or "").split()[1:]
+    try:
+        await m.delete()
+    except Exception as e:
+        log.warning("не смог удалить сообщение с паролем: %s", e)
+    if len(args) != 2:
+        return await m.answer("Отправь одним сообщением: /eclass_login логин пароль\n"
+                              "Я обменяю их на токен (как приложение Coursemos), пароль не сохраню, сообщение удалю.")
+    try:
+        info = await eclass.login(*args)
+        msgs = await eclass.sync()
+    except Exception as e:
+        return await m.answer(f"⚠️ Не получилось подключить e-class: {e}")
+    await m.answer(f"✅ e-class подключён: {info.get('fullname', '')}. Пароль не сохранён, твоё сообщение удалено.\n"
+                   f"Проверяю задания каждые 2 часа и напоминаю за сутки и за 3 часа до дедлайна, если не сдано.\n\n"
+                   f"Совет: смени пароль в e-class — токену бота это обычно не мешает.")
+    for t in msgs or ["Несданных заданий сейчас нет 👌"]:
+        await m.answer(t)
+
+
+@dp.message(Command("eclass"))
+async def cmd_eclass(m: Message):
+    if not eclass.connected():
+        return await m.answer("e-class не подключён. Отправь: /eclass_login логин пароль")
+    try:
+        for t in await eclass.sync():
+            await m.answer(t)
+    except Exception as e:
+        await m.answer(f"⚠️ Не смог проверить сайт: {e}\nПоказываю данные с прошлой проверки.")
+    rows = eclass.upcoming()
+    await send_long(m.chat.id, "Несданное в e-class:\n" + "\n".join(
+        f"• {r['course']}: {r['name']} — до {r['due_local']}" for r in rows) if rows else "Несданных заданий нет 👌")
+    await m.answer(f"Аккаунт: {db.kv_get('eclass_user') or '—'}. Отключить: /eclass_logout")
+
+
+@dp.message(Command("eclass_logout"))
+async def cmd_eclass_logout(m: Message):
+    eclass.logout()
+    await m.answer("e-class отключён, токен удалён.")
+
+
 @dp.message(Command("reset"))
 async def cmd_reset(m: Message):
     db.reset_history(m.chat.id)
@@ -261,6 +306,25 @@ async def journal_nudge():
         await bot.send_message(owner, NUDGE)
 
 
+# ---------- e-class: проверка дедлайнов ----------
+async def eclass_check():
+    if not eclass.due_check() or not db.owner_chat():
+        return
+    db.kv_set("eclass_checked", int(datetime.now().timestamp()))  # даже при ошибке не долбим сайт каждые 20 с
+    try:
+        msgs = await eclass.sync()
+    except eclass.EclassError as e:
+        db.log_event("error", "eclass", str(e))
+        if not eclass.connected():  # токен умер — скажем один раз
+            await bot.send_message(db.owner_chat(), f"⚠️ e-class: {e}")
+        return
+    except Exception as e:
+        db.log_event("error", "eclass", f"{type(e).__name__}: {e}")
+        return
+    for t in msgs:
+        await bot.send_message(db.owner_chat(), t)
+
+
 # ---------- фоновые напоминания ----------
 async def reminder_loop():
     while True:
@@ -278,6 +342,7 @@ async def reminder_loop():
                 else:
                     await bot.send_message(r["chat_id"], f"⏰ {r['text']}")
             await journal_nudge()
+            await eclass_check()
         except Exception:
             log.exception("reminder loop")
         await asyncio.sleep(20)
