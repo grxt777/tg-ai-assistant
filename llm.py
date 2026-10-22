@@ -12,7 +12,8 @@ import config
 import db
 
 log = logging.getLogger(__name__)
-client = genai.Client(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY,
+                      http_options=types.HttpOptions(timeout=60_000))  # мс: зависший запрос не держит ответ вечно
 
 
 class QuotaExhausted(Exception):
@@ -36,18 +37,21 @@ def _quota_wait(e):
     return h * 3600 + mi * 60 + sec
 
 
+def _minute_wait(e):
+    """Сколько секунд просит подождать поминутный лимит (429 без PerDay)."""
+    m = re.search(r"retry in ([\d.]+)s", str(e)) or re.search(r"retryDelay'?\"?:\s*'?\"?(\d+)s", str(e))
+    return float(m.group(1)) if m else 30
+
+
 async def _retry(fn, *args, **kwargs):
-    delay = 5
-    for attempt in range(5):
+    """Короткие повторы только на 500/503. 429 сразу наверх — generate переключит модель."""
+    for attempt in range(2):
         try:
             return await fn(*args, **kwargs)
         except errors.APIError as e:
-            if getattr(e, "code", None) == 429 and _quota_wait(e) is not None:
-                raise  # дневной лимит — ждать бессмысленно, пусть generate переключит модель
-            if getattr(e, "code", None) in (429, 500, 503) and attempt < 4:
-                log.warning("Gemini %s, повтор через %ss", e.code, delay)
-                await asyncio.sleep(delay)
-                delay *= 2
+            if getattr(e, "code", None) in (500, 503) and attempt == 0:
+                log.warning("Gemini %s, повтор через 2с", e.code)
+                await asyncio.sleep(2)
                 continue
             raise
 
@@ -82,7 +86,7 @@ def _candidates():
     return [m for m in chain if _exhausted.get(m, 0) <= now]
 
 
-async def generate(contents, system, tools):
+async def generate(contents, system, tools, _retried=False):
     cfg = types.GenerateContentConfig(
         system_instruction=system,
         tools=tools,
@@ -100,15 +104,29 @@ async def generate(contents, system, tools):
             if code == 404 and model != current_model():  # запасная модель недоступна этому ключу
                 _exhausted[model] = time.time() + 86400
                 continue
-            wait = _quota_wait(e) if code == 429 else None
-            if wait is None:
+            if code in (500, 503):  # модель перегружена — пробуем следующую
+                log.warning("%s: %s — переключаюсь на запасную модель", model, code)
+                continue
+            if code != 429:
                 raise
+            wait = _quota_wait(e)
+            if wait is None:  # поминутный лимит: не ждём, а сразу берём другую модель
+                _exhausted[model] = time.time() + _minute_wait(e)
+                log.warning("Поминутный лимит %s — переключаюсь на запасную модель", model)
+                continue
             _exhausted[model] = time.time() + wait
             last = (model, wait)
             log.warning("Лимит %s исчерпан на %.1f ч — переключаюсь на запасную модель", model, wait / 3600)
             db.log_event("error", "quota", f"{model}: дневной лимит исчерпан, сброс через {wait / 3600:.1f} ч")
     else:
-        hours = min((t - time.time() for t in _exhausted.values()), default=(last[1] if last else 3600)) / 3600
+        now = time.time()
+        soonest = min((t - now for t in _exhausted.values() if t > now), default=0)
+        if 0 < soonest <= 60 and not _retried:  # все упёрлись в поминутный лимит — подождём один раз
+            await asyncio.sleep(soonest)
+            return await generate(contents, system, tools, _retried=True)
+        if last is None or soonest <= 60:  # дневной лимит ни при чём
+            raise QuotaExhausted("Gemini сейчас перегружен или упёрся в поминутный лимит. Попробуй через минуту.")
+        hours = soonest / 3600
         raise QuotaExhausted(f"Бесплатный дневной лимит Gemini закончился на всех моделях. "
                              f"Снова заработает примерно через {max(hours, 0.1):.0f} ч. "
                              f"Чтобы не упираться — включи оплату в Google AI Studio.")
