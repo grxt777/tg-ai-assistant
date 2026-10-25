@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
@@ -252,11 +253,40 @@ async def cmd_eclass_login(m: Message):
         msgs = await eclass.sync()
     except Exception as e:
         return await m.answer(f"⚠️ Не получилось подключить e-class: {e}")
-    await m.answer(f"✅ e-class подключён: {info.get('fullname', '')}. Пароль не сохранён, твоё сообщение удалено.\n"
+    shared = await _share_eclass_with_mirik(*args)
+    await m.answer(f"✅ e-class подключён: {info.get('fullname', '')}. Пароль у меня не сохранён, твоё сообщение удалено.\n"
                    f"Проверяю задания каждые 2 часа и напоминаю за сутки и за 3 часа до дедлайна, если не сдано.\n\n"
-                   f"Совет: смени пароль в e-class — токену бота это обычно не мешает.")
+                   + ("🔐 Логин и пароль передал Мирику — его команда сама зайдёт в e-class и скачает задания. "
+                      "Если сменишь пароль в e-class, просто сделай /eclass_login ещё раз."
+                      if shared else f"⚠️ Мирику доступ не передал: {shared.reason}"))
     for t in msgs or ["Несданных заданий сейчас нет 👌"]:
         await m.answer(t)
+
+
+class _NotShared:
+    def __init__(self, reason):
+        self.reason = reason
+
+    def __bool__(self):
+        return False
+
+
+async def _share_eclass_with_mirik(username, password):
+    """Отдаём доступ Мирику по прямому каналу: у него Боря заходит в e-class браузером и качает файлы заданий.
+    У нас пароль не остаётся — только токен."""
+    if not (config.MIRIK_URL and config.AGENT_LINK_TOKEN):
+        return _NotShared("связь с Мириком не настроена")
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
+            async with s.post(f"{config.MIRIK_URL}/link/secrets",
+                              json={"from": "Саня", "secrets": {"eclass_login": username, "eclass_pass": password}},
+                              headers={"Authorization": f"Bearer {config.AGENT_LINK_TOKEN}"}) as r:
+                if r.status == 200:
+                    db.log_event("link", "Мирик", "передан доступ e-class")
+                    return True
+                return _NotShared(f"Мирик ответил HTTP {r.status}")
+    except Exception as e:
+        return _NotShared(f"Мирик недоступен: {type(e).__name__}")
 
 
 @dp.message(Command("eclass"))
