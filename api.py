@@ -424,6 +424,7 @@ async def link_ask(req):
     """Мирик (старший агент) пишет Сане: права как у владельца, кроме передачи задачи обратно."""
     b = await req.json()
     text, name = (b.get("text") or "").strip(), (b.get("from") or "Мирик").strip()[:40]
+    reply_to = b.get("chat_id") if isinstance(b.get("chat_id"), int) else None  # чат, где Мирика спросили
     if not text:
         return web.json_response({"error": "пустое сообщение"}, status=400)
     line = f"[{name}]: {text}"
@@ -433,7 +434,7 @@ async def link_ask(req):
     try:
         return web.json_response({"reply": await asyncio.wait_for(asyncio.shield(job), LINK_WAIT)})
     except asyncio.TimeoutError:
-        job.add_done_callback(lambda t: asyncio.create_task(_link_late(t, name, text)))
+        job.add_done_callback(lambda t: asyncio.create_task(_link_late(t, name, text, reply_to)))
         return web.json_response({"pending": True})
     except Exception as e:
         return web.json_response({"error": f"{type(e).__name__}: {e}"[:500]}, status=503)
@@ -474,11 +475,16 @@ async def link_usage(_):
                               "by_day": by_day, "router_models": config.OPENROUTER_MODELS})
 
 
-async def _link_late(job, name, text):
-    """Не успели за LINK_WAIT — отчитываемся владельцу напрямую."""
+async def _link_late(job, name, text, reply_to=None):
+    """Не успели за LINK_WAIT — отчитываемся сами: в тот чат, где спрашивали (группа), иначе владельцу в личку."""
     reply = f"⚠️ {job.exception()}" if job.exception() else job.result()
-    if _bot and db.owner_chat():
-        await _bot.send_message(db.owner_chat(), f"🤝 Поручение от {name}: «{text[:200]}»\n\n{reply}"[:4000])
+    target = reply_to or db.owner_chat()
+    if _bot and target:
+        try:
+            await _bot.send_message(target, f"🤝 Поручение от {name}: «{text[:200]}»\n\n{reply}"[:4000])
+        except Exception:  # например, Саню нет в той группе
+            if target != db.owner_chat():
+                await _bot.send_message(db.owner_chat(), f"🤝 Поручение от {name}: «{text[:200]}»\n\n{reply}"[:4000])
 
 
 def _dumps(obj):

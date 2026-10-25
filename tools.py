@@ -272,10 +272,11 @@ async def _journal_stats(days=7, **_):
     return s
 
 
-async def _ask_mirik(task, **_):
+async def _ask_mirik(task, chat_id=None, **_):
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90)) as s:
-            async with s.post(f"{config.MIRIK_URL}/link/ask", json={"text": task, "from": "Саня"},
+            # chat_id — откуда пришла просьба: поздний ответ Мирик пришлёт туда же (в группу — значит в группу)
+            async with s.post(f"{config.MIRIK_URL}/link/ask", json={"text": task, "from": "Саня", "chat_id": chat_id},
                               headers={"Authorization": f"Bearer {config.AGENT_LINK_TOKEN}"}) as r:
                 data = await r.json(content_type=None)
     except Exception as e:
