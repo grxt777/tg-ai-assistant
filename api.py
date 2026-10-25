@@ -1,4 +1,5 @@
 """HTTP API для веб-админки. Работает в том же процессе, что и бот, защищён токеном ADMIN_API_TOKEN."""
+import asyncio
 import hashlib
 import hmac
 import json
@@ -52,7 +53,8 @@ def _rss_mb():
 async def auth(request, handler):
     if request.path == "/health" or request.path.startswith("/alarms/"):  # у будильников свой ключ
         return await handler(request)
-    token = os.getenv("ADMIN_API_TOKEN", "")
+    # канал с Мириком — отдельный токен, админский ему не нужен
+    token = config.AGENT_LINK_TOKEN if request.path.startswith("/link/") else os.getenv("ADMIN_API_TOKEN", "")
     got = request.headers.get("Authorization", "").removeprefix("Bearer ")
     if not token or not hmac.compare_digest(got, token):
         return web.json_response({"error": "unauthorized"}, status=401)
@@ -409,6 +411,38 @@ async def models(_):
                 and not re.search(r"tts|image|audio|live", name)):
             out.append(name)
     return web.json_response({"models": sorted(set(out)) + config.OPENROUTER_MODELS})
+
+
+# ---------- канал с Мириком ----------
+LINK_CHAT = -1  # своя история диалога для разговоров с Мириком
+LINK_WAIT = 50  # дольше держать HTTP-запрос не стоит — дальше ответ уйдёт владельцу в Telegram
+
+
+@routes.post("/link/ask")
+async def link_ask(req):
+    """Мирик (старший агент) пишет Сане: права как у владельца, кроме передачи задачи обратно."""
+    b = await req.json()
+    text, name = (b.get("text") or "").strip(), (b.get("from") or "Мирик").strip()[:40]
+    if not text:
+        return web.json_response({"error": "пустое сообщение"}, status=400)
+    line = f"[{name}]: {text}"
+    db.log_event("link", name, text[:500])
+    job = asyncio.create_task(agent.run(db.owner_chat(), [types.Part.from_text(text=line)], line,
+                                        guest=name, boss=True, history_id=LINK_CHAT))
+    try:
+        return web.json_response({"reply": await asyncio.wait_for(asyncio.shield(job), LINK_WAIT)})
+    except asyncio.TimeoutError:
+        job.add_done_callback(lambda t: asyncio.create_task(_link_late(t, name, text)))
+        return web.json_response({"pending": True})
+    except Exception as e:
+        return web.json_response({"error": f"{type(e).__name__}: {e}"[:500]}, status=503)
+
+
+async def _link_late(job, name, text):
+    """Не успели за LINK_WAIT — отчитываемся владельцу напрямую."""
+    reply = f"⚠️ {job.exception()}" if job.exception() else job.result()
+    if _bot and db.owner_chat():
+        await _bot.send_message(db.owner_chat(), f"🤝 Поручение от {name}: «{text[:200]}»\n\n{reply}"[:4000])
 
 
 def _dumps(obj):

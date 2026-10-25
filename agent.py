@@ -28,6 +28,8 @@ SYSTEM = """Ты — личный ИИ-ассистент одного чело�
   накапливаться (привычки, задачи, вес, книги, контакты) — заведи таблицу и пиши туда.
   Перед созданием проверь list_tables, не дублируй. Для аналитики делай SELECT с агрегатами.
 - Напоминания и плановые задачи (add_reminder/list_reminders/cancel_reminder).
+- Мирик (ask_mirik, если доступен) — старший ИИ-агент владельца с командой: интернет, браузер, код,
+  решение домашки. Отдавай ему то, чего сам не умеешь. Он тоже может писать тебе и давать поручения.
 - Учёба: e-class INHA (eclass_tasks) — несданные задания и дедлайны. Вопросы «что по дз», «какие дедлайны»
   — вызывай eclass_tasks (refresh=true, если просят проверить сейчас). Бот сам проверяет сайт и напоминает.
 - Будильники на iPhone (set_alarm/list_alarms/cancel_alarm): «разбуди», «поставь будильник» — это set_alarm,
@@ -147,23 +149,27 @@ DONE = {"journal_log": "записал в дневник", "journal_delete": "у
         "cancel_alarm": "отменил будильник", "create_table": "создал таблицу", "run_sql": "обновил таблицу"}
 
 
-async def run(chat_id, user_parts, history_text, query_text=None, save_history=True, guest=None, boss=False):
+async def run(chat_id, user_parts, history_text, query_text=None, save_history=True, guest=None, boss=False,
+              history_id=None):
     """user_parts — список types.Part (текст, аудио, картинка). history_text — что записать в историю.
     guest — имя другого бота, который обратился в группе: инструменты только на чтение,
-    если это не старший ассистент (boss) — у того права как у владельца."""
+    если это не старший ассистент (boss) — у того права как у владельца.
+    history_id — чья история диалога (по умолчанию chat_id; у канала с Мириком своя)."""
+    history_id = history_id or chat_id
     system = await _system_prompt(query_text if query_text is not None else history_text)
     if guest:
         system += (BOSS if boss else GUEST).format(name=guest)
-    readonly = bool(guest) and not boss
+    toolset = tools.READONLY_TOOLS if guest and not boss else tools.NO_LINK_TOOLS if guest else tools.TOOLS
+    allowed = {d.name for t in toolset for d in t.function_declarations}
     contents = [types.Content(role="user" if m["role"] == "user" else "model",
                               parts=[types.Part.from_text(text=m["content"])])
-                for m in db.get_history(chat_id, db.setting("history_limit", config.HISTORY_LIMIT, int))]
+                for m in db.get_history(history_id, db.setting("history_limit", config.HISTORY_LIMIT, int))]
     contents.append(types.Content(role="user", parts=user_parts))
 
     text, used = None, []
     for _ in range(10):
         try:
-            resp = await llm.generate(contents, system, tools.READONLY_TOOLS if readonly else tools.TOOLS)
+            resp = await llm.generate(contents, system, toolset)
         except Exception as e:
             if not used:
                 raise
@@ -185,7 +191,7 @@ async def run(chat_id, user_parts, history_text, query_text=None, save_history=T
         parts = []
         for c in calls:
             t0 = time.monotonic()
-            result = await tools.call(c.name, dict(c.args or {}), chat_id, readonly=readonly)
+            result = await tools.call(c.name, dict(c.args or {}), chat_id, allowed=allowed)
             used.append(c.name)
             log.info("tool %s(%s) -> %s", c.name, dict(c.args or {}), tools.short(result))
             db.log_event("error" if isinstance(result, dict) and "error" in result else "tool", c.name,
@@ -198,8 +204,8 @@ async def run(chat_id, user_parts, history_text, query_text=None, save_history=T
     if not text:
         text = "Готово." if used else "Не получилось сформулировать ответ, попробуй ещё раз."
     if save_history:
-        db.add_message(chat_id, "user", history_text)
-        db.add_message(chat_id, "model", text)
+        db.add_message(history_id, "user", history_text)
+        db.add_message(history_id, "model", text)
     return text
 
 

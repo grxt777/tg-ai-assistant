@@ -1,6 +1,8 @@
 """Инструменты, которые агент вызывает сам (function calling)."""
 import json
 import re
+
+import aiohttp
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -122,7 +124,19 @@ DECLARATIONS = [
         {"days": I}, ["days"]),
 ]
 
+if config.MIRIK_URL and config.AGENT_LINK_TOKEN:
+    DECLARATIONS.append(_fn(
+        "ask_mirik",
+        "Поручить задачу Мирику — старшему ИИ-агенту владельца с командой: Тимур (пишет и запускает код), "
+        "Лиза (ищет в интернете), Боря (настоящий браузер: заходит на сайты, логинится, скачивает), "
+        "Ника (решает домашку, пишет тексты). Используй для того, чего сам не умеешь. Пиши задание "
+        "со всем нужным контекстом. Ответ может занять несколько минут — если не успеет, Мирик пришлёт его "
+        "владельцу сам.",
+        {"task": S}, ["task"]))
+
 TOOLS = [types.Tool(function_declarations=DECLARATIONS)]
+# когда пишет другой агент, обратно ему задачу не передаём — иначе они будут гонять её по кругу
+NO_LINK_TOOLS = [types.Tool(function_declarations=[d for d in DECLARATIONS if d.name != "ask_mirik"])]
 # другим ботам в группе — только чтение: память, дневник, таблицы и напоминания они менять не могут
 READONLY = {"search_memory", "list_tables", "list_reminders", "list_alarms", "eclass_tasks", "journal_day",
             "journal_stats"}
@@ -258,6 +272,19 @@ async def _journal_stats(days=7, **_):
     return s
 
 
+async def _ask_mirik(task, **_):
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90)) as s:
+            async with s.post(f"{config.MIRIK_URL}/link/ask", json={"text": task, "from": "Саня"},
+                              headers={"Authorization": f"Bearer {config.AGENT_LINK_TOKEN}"}) as r:
+                data = await r.json(content_type=None)
+    except Exception as e:
+        return {"error": f"Мирик недоступен: {type(e).__name__}"}
+    if data.get("pending"):
+        return {"pending": "Мирик взял задачу в работу и пришлёт результат владельцу в Telegram сам"}
+    return {"reply": data["reply"]} if data.get("reply") else {"error": data.get("error", f"HTTP {r.status}")}
+
+
 HANDLERS = {
     "save_memory": _save_memory, "search_memory": _search_memory, "update_memory": _update_memory,
     "delete_memory": _delete_memory, "list_tables": _list_tables, "create_table": _create_table,
@@ -265,13 +292,14 @@ HANDLERS = {
     "cancel_reminder": _cancel_reminder, "journal_log": _journal_log, "journal_day": _journal_day,
     "journal_params": _journal_params, "set_alarm": _set_alarm, "list_alarms": _list_alarms,
     "cancel_alarm": _cancel_alarm, "eclass_tasks": _eclass_tasks,
-    "journal_delete": _journal_delete, "journal_stats": _journal_stats,
+    "journal_delete": _journal_delete, "journal_stats": _journal_stats, "ask_mirik": _ask_mirik,
 }
 
 
-async def call(name, args, chat_id, readonly=False):
+async def call(name, args, chat_id, allowed=None):
+    """allowed — имена инструментов, доступных в этом разговоре (None — все)."""
     fn = HANDLERS.get(name)
-    if not fn or (readonly and name not in READONLY):
+    if not fn or (allowed is not None and name not in allowed):
         return {"error": f"нет инструмента {name}"}
     try:
         return await fn(**args, chat_id=chat_id)

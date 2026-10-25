@@ -11,6 +11,9 @@ MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODELS = [m.strip() for m in os.getenv("OPENROUTER_MODELS", "nvidia/nemotron-3-ultra-550b-a55b:free").split(",")
                      if m.strip()] if OPENROUTER_API_KEY else []
+# Прямой канал с Мириком (старший агент, отдельное приложение): общий токен и его адрес
+AGENT_LINK_TOKEN = os.getenv("AGENT_LINK_TOKEN", "")
+MIRIK_URL = os.getenv("MIRIK_URL", "").rstrip("/")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 
