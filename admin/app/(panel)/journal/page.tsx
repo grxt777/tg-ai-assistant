@@ -318,7 +318,7 @@ export default function JournalPage() {
               hint={<Delta cur={s.avg.score} prev={s.prev.avg.score} />} />
             <StatTile label="Доход" value={short(s.income)} hint={<Delta cur={s.income} prev={s.prev.income} money />} />
             <StatTile label="Расход" value={short(s.expense)} hint={<Delta cur={s.expense} prev={s.prev.expense} money lowerIsBetter />} />
-            <StatTile label="Баланс" value={<span className={s.net < 0 ? "text-bad" : ""}>{s.net > 0 ? "+" : ""}{short(s.net)}</span>}
+            <StatTile label="Доход − расход" value={<span className={s.net < 0 ? "text-bad" : ""}>{s.net > 0 ? "+" : ""}{short(s.net)}</span>}
               hint={`записано ${s.logged} из ${s.days} дн. · серия ${s.streak}`} />
           </div>
 
