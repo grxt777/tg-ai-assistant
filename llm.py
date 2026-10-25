@@ -254,3 +254,15 @@ async def generate(contents, system, tools, _retried=False):
                                f"total={getattr(u, 'total_token_count', 0) or 0}",
                  int((time.monotonic() - t0) * 1000))
     return resp
+
+
+TRANSCRIBE_PROMPT = ("Дословно расшифруй речь из этой записи на языке оригинала. "
+                     "Верни только текст, без пояснений и кавычек. Если речи нет — верни пустую строку.")
+
+
+async def transcribe(data: bytes, mime: str) -> str:
+    """Голос → текст. Слушать умеет только Gemini — Мирик тоже присылает свои голосовые сюда."""
+    contents = [types.Content(role="user", parts=[types.Part.from_bytes(data=data, mime_type=mime),
+                                                   types.Part.from_text(text=TRANSCRIBE_PROMPT)])]
+    resp = await generate(contents, "Ты точный стенографист.", None)
+    return (resp.text or "").strip()

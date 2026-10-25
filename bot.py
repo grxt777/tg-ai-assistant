@@ -305,11 +305,22 @@ async def on_document(m: Message):
         await m.answer(f"⚠️ Не смог обработать файл: {e}")
 
 
-@dp.message(F.voice | F.audio)
+@dp.message(F.voice | F.audio | F.video_note)
 async def on_voice(m: Message):
-    media = m.voice or m.audio
+    media = m.voice or m.audio or m.video_note
     data = (await bot.download(media)).read()
-    mime = getattr(media, "mime_type", None) or "audio/ogg"
+    mime = getattr(media, "mime_type", None) or ("video/mp4" if m.video_note else "audio/ogg")
+    # Сначала расшифровываем: владелец видит, что услышано, а дальше это обычный текст —
+    # в том числе задачу для команды Мирика агент сам передаст через ask_mirik.
+    try:
+        text = await typing_while(m.chat.id, llm.transcribe(data, mime))
+    except Exception:
+        log.exception("transcribe")
+        text = ""
+    if text:
+        await m.reply(f"🎙 «{text[:3900]}»")
+        await answer(m, [types.Part.from_text(text=text)], f"[голосовое] {text}", query_text=text)
+        return
     parts = [types.Part.from_bytes(data=data, mime_type=mime),
              types.Part.from_text(text="(Это голосовое сообщение владельца. Пойми его и ответь как на обычное.)")]
     await answer(m, parts, "[голосовое сообщение]", query_text="")

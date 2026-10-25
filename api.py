@@ -1,5 +1,6 @@
 """HTTP API для веб-админки. Работает в том же процессе, что и бот, защищён токеном ADMIN_API_TOKEN."""
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -434,6 +435,24 @@ async def link_ask(req):
     except asyncio.TimeoutError:
         job.add_done_callback(lambda t: asyncio.create_task(_link_late(t, name, text)))
         return web.json_response({"pending": True})
+    except Exception as e:
+        return web.json_response({"error": f"{type(e).__name__}: {e}"[:500]}, status=503)
+
+
+@routes.post("/link/transcribe")
+async def link_transcribe(req):
+    """Мирик присылает голосовое владельца: его модель звук не слышит, расшифровывает Саня."""
+    b = await req.json()
+    try:
+        data = base64.b64decode(b.get("audio") or "", validate=True)
+    except ValueError:
+        return web.json_response({"error": "audio должен быть base64"}, status=400)
+    if not data:
+        return web.json_response({"error": "пустая запись"}, status=400)
+    mime, name = (b.get("mime") or "audio/ogg")[:60], (b.get("from") or "Мирик").strip()[:40]
+    db.log_event("link", name, f"голосовое на расшифровку, {len(data) // 1024} КБ")
+    try:
+        return web.json_response({"text": await llm.transcribe(data, mime)})
     except Exception as e:
         return web.json_response({"error": f"{type(e).__name__}: {e}"[:500]}, status=503)
 
