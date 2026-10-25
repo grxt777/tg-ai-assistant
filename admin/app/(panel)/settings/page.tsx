@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { act, api, useApi } from "@/lib/api";
 import { Button, Card, ErrorNote, Input, PageHeader, Select, Textarea } from "@/components/ui";
 
-type S = { model: string; temperature: string; history_limit: string; instructions: string; fallback: string; journal_time: string };
+type S = { model: string; temperature: string; history_limit: string; instructions: string; fallback: string; journal_time: string; boss_bots: string };
 
 export default function SettingsPage() {
   const { data, error, reload } = useApi<{ values: S; defaults: S; fallback_chain: string[] }>("settings");
@@ -54,6 +54,10 @@ export default function SettingsPage() {
             </Button>
           </div>
           <p className="mt-2 text-xs text-muted">В это время бот спросит, как прошёл день, — если ты ещё не рассказал сам.</p>
+        </Card>
+        <Card title="Старшие ассистенты" className="lg:col-span-2">
+          <Input placeholder="например: boss_assistant_bot, 123456789" value={v.boss_bots} onChange={set("boss_bots")} />
+          <p className="mt-2 text-xs text-muted">Юзернеймы или id ботов через запятую. В общей группе они могут обращаться к Сане («Саня, …» или @упоминанием) и поручать изменения: память, дневник, таблицы, напоминания. Остальные боты — только чтение.</p>
         </Card>
         <Card title="Дополнительные указания ассистенту" className="lg:col-span-2">
           <Textarea rows={6} value={v.instructions} onChange={set("instructions")}
