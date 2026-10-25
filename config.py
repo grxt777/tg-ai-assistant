@@ -7,6 +7,10 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+# OpenRouter: модели вида "vendor/name" идут туда, а не в Gemini. Ключ необязателен — без него их просто нет.
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODELS = [m.strip() for m in os.getenv("OPENROUTER_MODELS", "nvidia/nemotron-3-ultra-550b-a55b:free").split(",")
+                     if m.strip()] if OPENROUTER_API_KEY else []
 EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 

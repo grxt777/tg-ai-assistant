@@ -408,7 +408,7 @@ async def models(_):
         if ("generateContent" in (m.supported_actions or []) and ("flash" in name or "pro" in name)
                 and not re.search(r"tts|image|audio|live", name)):
             out.append(name)
-    return web.json_response({"models": sorted(set(out))})
+    return web.json_response({"models": sorted(set(out)) + config.OPENROUTER_MODELS})
 
 
 def _dumps(obj):

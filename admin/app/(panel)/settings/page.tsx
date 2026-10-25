@@ -27,11 +27,11 @@ export default function SettingsPage() {
             <option value="">По умолчанию ({d.model})</option>
             {(models.data?.models || []).map((m) => <option key={m} value={m}>{m}</option>)}
           </Select>
-          <p className="mt-2 text-xs text-muted">flash — быстрая и бесплатная. pro — умнее, но лимиты бесплатного тарифа намного меньше. lite — самые высокие лимиты.</p>
+          <p className="mt-2 text-xs text-muted">flash — быстрая и бесплатная. pro — умнее, но лимиты бесплатного тарифа намного меньше. lite — самые высокие лимиты. Модели вида vendor/name (например, nemotron) идут через OpenRouter: только текст, голос и фото всё равно уйдут в Gemini.</p>
         </Card>
         <Card title="Запасные модели">
           <label className="relative flex items-center justify-between gap-3">
-            <span className="text-sm">Переключаться, когда дневной лимит модели закончился</span>
+            <span className="text-sm">Переключаться, когда модель упёрлась в лимит или не отвечает</span>
             <input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={(v.fallback || d.fallback) !== "0"}
               onChange={(e) => setV({ ...v, fallback: e.target.checked ? "1" : "0" })} />
           </label>
