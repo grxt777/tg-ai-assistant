@@ -31,8 +31,27 @@ DOC_EXT = (".txt", ".md", ".pdf", ".csv", ".json", ".py", ".html")
 
 
 # ---------- доступ только владельцу ----------
+def _addressed(m: Message, me, owner=False):
+    """Обращаются ли к нам: @упоминание или /команда@бот. Владельцу хватает и /команды без @ и ответа на наше."""
+    text, at = m.text or m.caption or "", f"@{me.username}".lower()
+    for e in m.entities or m.caption_entities or []:
+        chunk = e.extract_from(text).lower()
+        if e.type == "mention" and chunk == at or e.type == "text_mention" and e.user and e.user.id == me.id:
+            return True
+        if e.type == "bot_command" and (chunk.endswith(at) or owner and "@" not in chunk):
+            return True
+    return owner and bool(m.reply_to_message and m.reply_to_message.from_user
+                          and m.reply_to_message.from_user.id == me.id)
+
+
 @dp.message.outer_middleware()
 async def owner_only(handler, event: Message, data):
+    group = event.chat.type != "private"
+    if event.from_user and event.from_user.is_bot:
+        # другие ИИ-ассистенты в группе: отвечаем, только если упомянули нас; остальным молчим
+        if group and (event.text or event.caption) and _addressed(event, await bot.me()):
+            await guest_answer(event)
+        return
     uid = event.from_user.id if event.from_user else 0
     owner = config.OWNER_ID or int(db.kv_get("owner_id") or 0)
     if not owner:
@@ -40,6 +59,8 @@ async def owner_only(handler, event: Message, data):
         owner = uid
         log.info("Владелец назначен: %s", uid)
         await api.setup_menu_button(bot)
+    if group and not _addressed(event, await bot.me(), owner=uid == owner):
+        return  # в группе слушаем только обращения к себе, а не всю переписку
     if uid != owner:
         await event.answer("Это приватный ассистент 🙂")
         return
@@ -63,9 +84,9 @@ async def typing_while(chat_id, coro):
         t.cancel()
 
 
-async def answer(m: Message, parts, history_text, query_text=None):
+async def answer(m: Message, parts, history_text, query_text=None, guest=None):
     try:
-        reply = await typing_while(m.chat.id, agent.run(m.chat.id, parts, history_text, query_text))
+        reply = await typing_while(m.chat.id, agent.run(m.chat.id, parts, history_text, query_text, guest=guest))
     except Exception as e:
         if isinstance(e, llm.QuotaExhausted):
             reply = f"⏳ {e}"
@@ -73,7 +94,16 @@ async def answer(m: Message, parts, history_text, query_text=None):
             log.exception("agent error")
             db.log_event("error", "agent", f"{type(e).__name__}: {e}")
             reply = f"⚠️ Ошибка: {type(e).__name__}: {str(e)[:300]}"
+    if guest:  # @упоминание бота в ответе разбудит его, и он ответит нам — так начинается бесконечный круг
+        reply = re.sub(r"@(\w+bot)\b", r"\1", reply, flags=re.I)
     await send_long(m.chat.id, reply)
+
+
+async def guest_answer(m: Message):
+    """Сообщение от другого бота, который нас упомянул: отвечаем, но без права что-то менять."""
+    name = m.from_user.full_name or m.from_user.username or "бот"
+    text = m.text or m.caption
+    await answer(m, [types.Part.from_text(text=f"[{name}]: {text}")], f"[{name}]: {text}", guest=name)
 
 
 # ---------- команды ----------

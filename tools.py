@@ -123,6 +123,10 @@ DECLARATIONS = [
 ]
 
 TOOLS = [types.Tool(function_declarations=DECLARATIONS)]
+# другим ботам в группе — только чтение: память, дневник, таблицы и напоминания они менять не могут
+READONLY = {"search_memory", "list_tables", "list_reminders", "list_alarms", "eclass_tasks", "journal_day",
+            "journal_stats"}
+READONLY_TOOLS = [types.Tool(function_declarations=[d for d in DECLARATIONS if d.name in READONLY])]
 
 
 async def _save_memory(content, category="note", **_):
@@ -265,9 +269,9 @@ HANDLERS = {
 }
 
 
-async def call(name, args, chat_id):
+async def call(name, args, chat_id, readonly=False):
     fn = HANDLERS.get(name)
-    if not fn:
+    if not fn or (readonly and name not in READONLY):
         return {"error": f"нет инструмента {name}"}
     try:
         return await fn(**args, chat_id=chat_id)
