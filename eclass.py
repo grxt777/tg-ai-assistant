@@ -1,9 +1,11 @@
 """e-class INHA (Coursemos на базе Moodle): дедлайны заданий через мобильный веб-сервис Moodle.
 
 Пароль не храним: один раз меняем логин/пароль на токен (как приложение Coursemos), дальше работаем по токену.
-Список берём из «Таймлайна» Moodle (core_calendar_get_action_events_by_timesort): там только то, что ещё
-нужно сделать — сданное задание из него пропадает само.
+Moodle тут старый и урезанный: нет ни таймлайна, ни core_webservice_get_site_info. Поэтому берём все задания
+(mod_assign) и тесты (mod_quiz) с дедлайном впереди и сами проверяем, сдано ли: статус сабмита / есть ли
+завершённая попытка. Сданное в список не попадает.
 """
+import html
 import json
 import logging
 from datetime import datetime
@@ -23,10 +25,10 @@ CHECK_EVERY = 2 * 3600  # как часто ходить на сайт
 
 db.conn.executescript("""
 CREATE TABLE IF NOT EXISTS eclass_tasks (
-    id INTEGER PRIMARY KEY,            -- id события Moodle
+    id INTEGER PRIMARY KEY,            -- cmid (id модуля курса Moodle, общий для заданий и тестов)
     course TEXT, name TEXT, module TEXT, url TEXT,
     due INTEGER,                       -- unix-время дедлайна
-    open INTEGER DEFAULT 1,            -- 1 — есть в таймлайне (не сдано), 0 — пропало (сдано/закрыто)
+    open INTEGER DEFAULT 1,            -- 1 — не сдано, 0 — пропало из списка (сдано/закрыто)
     reminded TEXT DEFAULT '',          -- какие напоминания уже отправлены: "new,24h,3h"
     seen_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -58,7 +60,8 @@ async def login(username, password):
     if not isinstance(res, dict) or not res.get("token"):
         raise EclassError(res.get("error") if isinstance(res, dict) else str(res)[:200])
     db.kv_set("eclass_token", res["token"])
-    info = await call("core_webservice_get_site_info")
+    users = await call("core_user_get_users_by_field", field="username", **{"values[0]": username})
+    info = users[0] if isinstance(users, list) and users else {}
     db.kv_set("eclass_user", f"{info.get('fullname', '')} ({info.get('username', username)})")
     return info
 
@@ -82,20 +85,44 @@ async def call(fn, **params):
     return res
 
 
-async def fetch():
-    """Что сейчас висит в таймлайне: задания, тесты и т.п. с дедлайнами начиная с сегодня."""
-    now = int(datetime.now().timestamp())
-    res = await call("core_calendar_get_action_events_by_timesort",
-                     timesortfrom=now - 86400, limitnum=50, limittononsuspendedevents=1)
+async def _assignments(courses, now):
     out = []
-    for e in res.get("events", []):
-        action = e.get("action") or {}
-        if action and not action.get("actionable", True):
-            continue  # например, ещё не открыто для сдачи
-        out.append({"id": e["id"], "name": e.get("activityname") or e.get("name", ""),
-                    "course": (e.get("course") or {}).get("fullname", ""), "module": e.get("modulename", ""),
-                    "url": e.get("url", ""), "due": e.get("timesort") or e.get("timestart")})
+    for co in courses:
+        for a in co.get("assignments", []):
+            due = a.get("duedate") or 0
+            if due < now - 86400:
+                continue  # давно прошло или без дедлайна
+            st = await call("mod_assign_get_submission_status", assignid=a["id"])
+            sub = (st.get("lastattempt") or {}).get("submission") or {}
+            team = (st.get("lastattempt") or {}).get("teamsubmission") or {}
+            if "submitted" in (sub.get("status"), team.get("status")):
+                continue
+            out.append({"id": a["cmid"], "name": a["name"], "course": html.unescape(co.get("fullname", "")),
+                        "module": "assign", "url": f"{BASE}/mod/assign/view.php?id={a['cmid']}", "due": due})
     return out
+
+
+async def _quizzes(names, now):
+    out = []
+    for q in (await call("mod_quiz_get_quizzes_by_courses")).get("quizzes", []):
+        due = q.get("timeclose") or 0
+        if due < now - 86400:
+            continue
+        tries = (await call("mod_quiz_get_user_attempts", quizid=q["id"], status="all")).get("attempts", [])
+        if any(t.get("state") == "finished" for t in tries):
+            continue
+        out.append({"id": q["coursemodule"], "name": q["name"], "course": names.get(q["course"], ""),
+                    "module": "quiz", "url": f"{BASE}/mod/quiz/view.php?id={q['coursemodule']}", "due": due})
+    return out
+
+
+async def fetch():
+    """Несданные задания и непройденные тесты с дедлайнами начиная со вчера."""
+    now = int(datetime.now().timestamp())
+    courses = (await call("mod_assign_get_assignments")).get("courses", [])
+    names = {co["id"]: html.unescape(co.get("fullname", "")) for co in courses}
+    tasks = await _assignments(courses, now) + await _quizzes(names, now)
+    return [{**t, "name": html.unescape(t["name"])} for t in tasks]
 
 
 def _fmt(ts):
@@ -134,7 +161,7 @@ async def sync():
             soon.append((t, "3h" if "3h" in fresh else "24h"))
             sent |= fresh
         db.ex("UPDATE eclass_tasks SET reminded=? WHERE id=?", (",".join(sorted(s for s in sent if s)), t["id"]))
-    # пропало из таймлайна — сдано или закрыто
+    # пропало из списка — сдано или закрыто
     for i in set(known) - ids:
         db.ex("UPDATE eclass_tasks SET open=0 WHERE id=?", (i,))
     db.kv_set("eclass_checked", now)
