@@ -457,6 +457,23 @@ async def link_transcribe(req):
         return web.json_response({"error": f"{type(e).__name__}: {e}"[:500]}, status=503)
 
 
+@routes.get("/link/usage")
+async def link_usage(_):
+    """Расход токенов Сани для админки Мирика: по моделям и по дням (14 дней)."""
+    by_model, by_day = {}, {}
+    rows = db.q("SELECT name, data, substr(created_at,1,10) day FROM events "
+                "WHERE kind='llm' AND created_at >= date('now','-13 days')")
+    for r in rows:
+        nums = {k: int(v) for k, v in re.findall(r"(in|out|total)=(\d+)", r["data"] or "")}
+        m = by_model.setdefault(r["name"], {"calls": 0, "in": 0, "out": 0, "total": 0})
+        m["calls"] += 1
+        for k in ("in", "out", "total"):
+            m[k] += nums.get(k, 0)
+        by_day[r["day"]] = by_day.get(r["day"], 0) + nums.get("total", 0)
+    return web.json_response({"model": llm.current_model(), "by_model": by_model,
+                              "by_day": by_day, "router_models": config.OPENROUTER_MODELS})
+
+
 async def _link_late(job, name, text):
     """Не успели за LINK_WAIT — отчитываемся владельцу напрямую."""
     reply = f"⚠️ {job.exception()}" if job.exception() else job.result()
